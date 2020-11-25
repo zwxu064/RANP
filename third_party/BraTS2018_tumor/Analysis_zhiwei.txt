@@ -1,0 +1,2 @@
+# from unet_dice_train.txt, it has too training, the first one is with norm, lower acc;
+  the later one is without norm, higher acc.
