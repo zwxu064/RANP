@@ -138,12 +138,12 @@ if __name__ == '__main__':
     del model_full
 
     if opt.model == 'mobilenetv2':  # was in rebuttal previously
-        json_path = 'data/3DV/ucf101_{}.json'.format(opt.model)
+        json_path = 'data/ucf101/ucf101_{}.json'.format(opt.model)
         network_connection_dict = create_network_connection_dict(model, json_network_connection=json_path)
     else:
         json_path, network_connection_dict = None, None
 
-    file_path = 'data/3DV/ucf101_{}_sz{}_{}_{}.npy'.format(
+    file_path = 'data/ucf101/ucf101_{}_sz{}_{}_{}.npy'.format(
         opt.model, opt.prune_spatial_size,
         opt.weight_init, grad_mode)
 

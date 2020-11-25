@@ -347,12 +347,12 @@ if __name__ == '__main__':
     grad_mode = 'raw' if args.enable_raw_grad else 'abs'
 
     if args.weight_init == 'xn':
-      file_path = 'data/main_paper/brats2018_kernel_hidden_prune_grad_sz{}_dim{}_'\
+      file_path = 'data/brats/brats2018_kernel_hidden_prune_grad_sz{}_dim{}_'\
                   'scale{}_fmap{}_depth{}_width{}_{}.npy'. \
         format(args.prune_spatial_size, args.prune_spatial_size, 1,
                f_maps, args.number_of_fmaps, args.width, grad_mode)
     else:
-      file_path = 'data/main_paper/brats2018_kernel_hidden_prune_grad_sz{}_dim{}_'\
+      file_path = 'data/brats/brats2018_kernel_hidden_prune_grad_sz{}_dim{}_'\
                   'scale{}_fmap{}_depth{}_width{}_init{}_{}.npy'. \
         format(args.prune_spatial_size, args.prune_spatial_size, 1,
                f_maps, args.number_of_fmaps, args.width,
