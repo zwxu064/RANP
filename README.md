@@ -9,7 +9,7 @@
 - This repository will include demos of neuron pruning on 3D-UNets for 3D semantic segmentation as well as MobileNetV2 and I3D for video classification.
 
 # How to use
-- Step 1: download precalculated gradients (users can also skip this step, then Step 2 will take time to generate these files automatically) from https://1drv.ms/u/s!AngC1-tRlyPMgRKlb505D_db0RAO?e=zxHJT3, then generate folder "data" and put them in individual subfolders as "data/shapenet", "data/brats", and "data/ucf101".
+- Step 1: download [precalculated gradients](https://1drv.ms/u/s!AngC1-tRlyPMgRKlb505D_db0RAO?e=zxHJT3) (users can also skip this step, then Step 2 will take time to generate these files automatically) from OneDrive. Then, generate folder "data" and put them in individual subfolders as "data/shapenet", "data/brats", and "data/ucf101".
 - Step 2: run "./run_shapenet.sh" for ShapeNet experiments, "./run_brats.sh" for BraTS, and "./run_ucf101.sh" for UCF101 (set MobileNetV2 or I3D in this file)
 
 # Notes
