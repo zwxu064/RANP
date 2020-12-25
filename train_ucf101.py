@@ -1,6 +1,6 @@
 import os, sys, json, torch, copy, math
 import numpy as np
-import third_party.efficient_3DCNN.test
+import third_party.efficient_3DCNN.test as test
 from torch import nn, optim
 from torch.optim import lr_scheduler
 from third_party.efficient_3DCNN.model import generate_model
@@ -17,7 +17,7 @@ from third_party.thop.thop.profile import profile
 from pruning.pytorch_snip.prune import pruning, do_statistics_model, dump_neuron_per_layer
 from pruning_related import refine_model_classification, refine_model_I3D
 from pruning.pytorch_snip.video_classification import create_network_connection_dict
-from aux.utils import weight_init
+from aux.utils import weight_init, remove_module_key
 from tensorboardX import SummaryWriter
 from configs import set_config
 
@@ -116,14 +116,6 @@ if __name__ == '__main__':
     print('Trainset len: {}, validset len: {}'.format(len(train_loader.dataset), len(val_loader.dataset)))
 
     best_prec1 = 0
-    if opt.resume_path:
-        print('loading checkpoint {}'.format(opt.resume_path))
-        checkpoint = torch.load(opt.resume_path)
-        assert opt.arch == checkpoint['arch']
-        best_prec1 = checkpoint['best_prec1']
-        opt.begin_epoch = checkpoint['epoch']
-        model.load_state_dict(checkpoint['state_dict'])
-
     opt.writer = SummaryWriter(opt.checkpoint_dir)
 
     # Profile for full model Zhiwei
@@ -197,6 +189,15 @@ if __name__ == '__main__':
           .format(flops / 1e9, params * 4 / (1024 ** 2), memory * 4 / (1024 ** 2)))
     del model_flops, profile_input
 
+    if opt.resume_path:
+        print('loading checkpoint {}'.format(opt.resume_path))
+        checkpoint = torch.load(opt.resume_path)
+        assert opt.arch == checkpoint['arch'].lower()
+        best_prec1 = checkpoint['best_prec1']
+        opt.begin_epoch = checkpoint['epoch']
+        new_state_dict = remove_module_key(checkpoint['state_dict'])
+        model.load_state_dict(new_state_dict)
+
     if not opt.no_cuda:
         model = model.cuda()
         model = nn.DataParallel(model, device_ids=None)
@@ -210,52 +211,57 @@ if __name__ == '__main__':
                           nesterov=opt.nesterov)
     scheduler = lr_scheduler.ReduceLROnPlateau(optimizer, 'min', patience=opt.lr_patience)
 
-    for i in range(opt.begin_epoch, opt.epoch + 1):
-        if not opt.no_train:
-            adjust_learning_rate(optimizer, i, opt)
-            train_epoch(i, train_loader, model, criterion, optimizer, opt,
-                        train_logger, train_batch_logger)
-            state = {
-                'epoch': i,
-                'arch': opt.arch,
-                'state_dict': model.state_dict(),
-                'optimizer': optimizer.state_dict(),
-                'best_prec1': best_prec1
-                }
-            save_checkpoint(state, False, opt)
-            
-        if not opt.no_val:
-            validation_loss, prec1 = val_epoch(i, val_loader, model, criterion,
+    if opt.enable_train:
+        for i in range(opt.begin_epoch, opt.epoch + 1):
+            if not opt.no_train:
+                adjust_learning_rate(optimizer, i, opt)
+                train_epoch(i, train_loader, model, criterion, optimizer, opt,
+                            train_logger, train_batch_logger)
+                state = {
+                    'epoch': i,
+                    'arch': opt.arch,
+                    'state_dict': model.state_dict(),
+                    'optimizer': optimizer.state_dict(),
+                    'best_prec1': best_prec1
+                    }
+                save_checkpoint(state, False, opt)
+
+            if not opt.no_val:
+                validation_loss, prec1 = val_epoch(i, val_loader, model, criterion,
+                                                   opt, val_logger)
+                is_best = prec1 > best_prec1
+                best_prec1 = max(prec1, best_prec1)
+                state = {
+                    'epoch': i,
+                    'arch': opt.arch,
+                    'state_dict': model.state_dict(),
+                    'optimizer': optimizer.state_dict(),
+                    'best_prec1': best_prec1
+                    }
+                save_checkpoint(state, is_best, opt)
+
+    if opt.enable_test:
+        if False:
+            spatial_transform = Compose([
+                Scale(int(opt.sample_size / opt.scale_in_test)),
+                CornerCrop(opt.sample_size, opt.crop_position_in_test),
+                ToTensor(opt.norm_value), norm_method
+            ])
+            # temporal_transform = LoopPadding(opt.sample_duration, opt.downsample)
+            temporal_transform = TemporalRandomCrop(opt.sample_duration, opt.downsample)
+            target_transform = VideoID()
+
+            test_data = get_test_set(opt, spatial_transform, temporal_transform,
+                                     target_transform)
+            test_loader = torch.utils.data.DataLoader(
+                test_data,
+                batch_size=16,
+                shuffle=False,
+                num_workers=opt.n_threads,
+                pin_memory=True)
+            test.test(test_loader, model, opt, test_data.class_names)
+        else:
+            validation_loss, prec1 = val_epoch(0, val_loader, model, criterion,
                                                opt, val_logger)
-            is_best = prec1 > best_prec1
-            best_prec1 = max(prec1, best_prec1)
-            state = {
-                'epoch': i,
-                'arch': opt.arch,
-                'state_dict': model.state_dict(),
-                'optimizer': optimizer.state_dict(),
-                'best_prec1': best_prec1
-                }
-            save_checkpoint(state, is_best, opt)
-
-    if opt.test:
-        spatial_transform = Compose([
-            Scale(int(opt.sample_size / opt.scale_in_test)),
-            CornerCrop(opt.sample_size, opt.crop_position_in_test),
-            ToTensor(opt.norm_value), norm_method
-        ])
-        # temporal_transform = LoopPadding(opt.sample_duration, opt.downsample)
-        temporal_transform = TemporalRandomCrop(opt.sample_duration, opt.downsample)
-        target_transform = VideoID()
-
-        test_data = get_test_set(opt, spatial_transform, temporal_transform,
-                                 target_transform)
-        test_loader = torch.utils.data.DataLoader(
-            test_data,
-            batch_size=16,
-            shuffle=False,
-            num_workers=opt.n_threads,
-            pin_memory=True)
-        test.test(test_loader, model, opt, test_data.class_names)
 
     opt.writer.close()

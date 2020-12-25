@@ -10,6 +10,7 @@ import torchvision.transforms as transforms
 from torch import nn
 from PIL import Image, ImageOps, ImageFilter
 import matplotlib.pyplot as plt
+from collections import OrderedDict
 
 
 def remove_tree(fold_dir, wildcards=None):
@@ -740,3 +741,11 @@ def weight_init_single_layer(layer, weight_init, enable_bias):
         nn.init.constant_(layer.bias, 0)
       else:
         nn.init.normal_(layer.bias)
+
+
+def remove_module_key(state_dict):
+  new_state_dict = OrderedDict()
+  for k, v in state_dict.items():
+    new_state_dict[k[7:]] = v
+
+  return new_state_dict

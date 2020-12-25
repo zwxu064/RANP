@@ -123,7 +123,7 @@ def test(model, dataset, args):
     print('Test, batch: {}, time: {:.4f}s'.format(idx, duration))
 
     if args.enable_viz:
-      viz_voxel(voxel=voxel, mask=mask, enable_close_time=5)
+      viz_voxel(voxel=voxel, mask=mask, enable_close_time=0)
 
 
 if __name__ == '__main__':
@@ -387,13 +387,15 @@ if __name__ == '__main__':
 
   # Test
   if args.enable_test:
-    if (args.test_epoch is None) or (args.test_epoch < 0):
-      resume_paths = [os.path.join(args.checkpoint_dir, 'model', 'model_epoch{}.pth'.format(idx)) for idx in range(args.epoch)]
-      for resume_path in resume_paths:
-        assert(os.path.exists(resume_path)), resume_path
+    if args.resume_path is None:
+      if (args.test_epoch is None) or (args.test_epoch < 0):
+        resume_paths = [os.path.join(args.checkpoint_dir, 'model', 'model_epoch{}.pth'.format(idx)) for idx in range(args.epoch)]
+        for resume_path in resume_paths:
+          assert(os.path.exists(resume_path)), resume_path
+      else:
+        resume_paths = os.path.join(args.model_dir, 'model_epoch{}.pth'.format(args.test_epoch))
     else:
-      n_model = 1
-      resume_paths = os.path.join(args.model_dir, 'model_epoch{}.pth'.format(args.test_epoch))
+      resume_paths = [args.resume_path]
 
     args.enable_viz = False
     duration = 0

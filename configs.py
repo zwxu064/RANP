@@ -53,6 +53,7 @@ def set_config():
   parser.add_argument('--load_transfer_model_path', type=str, default='', help='load model from BraTS')
   parser.add_argument('--save_transfer_model_path', type=str, default='', help='save model for BraTS')
   parser.add_argument('--enable_ssc_unet', action='store_true', default=False)
+  parser.add_argument('--enable_viz', action='store_true', default=False, help='visualization')
 
   # For BraTS
   parser.add_argument('--years', nargs='+', type=int, default=2018, help='BraTS year')
