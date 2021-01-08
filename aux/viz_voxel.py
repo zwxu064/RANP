@@ -2,22 +2,28 @@ import numpy as np
 import scipy.io as scio
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
-import time
+import time, os, copy
 
 colormap = ['red', 'green', 'yellow', 'blue', 'black', 'blue', 'white']
 
-def viz_voxel(file_name=None, voxel=None, enable_close_time=0, ignore_label=255, mask=None):
+def viz_voxel(file_name=None, voxel=None, enable_close_time=0, ignore_label=255, mask=None,
+              title=None, elevation=30, azimuth=45, fixed_color=None, data_root='.', enable_save=False):
   if file_name is not None:
     voxel = scio.loadmat(file_name)['gt']
+  else:
+    voxel = copy.deepcopy(voxel)
 
   classes = np.unique(voxel[voxel != ignore_label])
   colors = np.empty(voxel.shape, dtype=object)
 
   for idx in range(len(classes)):
-    if idx >= len(colormap):
-      color = 'white'
+    if fixed_color is None:
+      if idx >= len(colormap):
+        color = 'white'
+      else:
+        color = colormap[idx]
     else:
-      color = colormap[idx]
+      color = fixed_color
 
     colors[voxel==classes[idx]] = color
 
@@ -31,8 +37,20 @@ def viz_voxel(file_name=None, voxel=None, enable_close_time=0, ignore_label=255,
   time_start =time.time()
   fig = plt.figure()
   ax = fig.gca(projection='3d')
-  ax.voxels(voxel, facecolors=colors, edgecolor='k')
+  ax.voxels(voxel, facecolors=colors, edgecolor='k', linewidth=0.05)  # edgecolor='k'
   print('Display time: {:.4f} s'.format(time.time() - time_start))
+
+  ax.view_init(elevation, azimuth)  # elevation angle in z, azimuth angle in x-y
+  plt.axis('off')
+
+  if not os.path.exists(data_root):
+    os.makedirs(data_root)
+
+  if enable_save:
+    plt.savefig('{}/{}.eps'.format(data_root, title), format='eps')
+
+  if title is not None:
+    plt.title(title)
 
   if enable_close_time > 0:
     plt.show(block=False)

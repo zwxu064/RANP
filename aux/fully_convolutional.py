@@ -4,13 +4,11 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-import torch, data
+import torch, aux.data
 import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
-import time
-import os, sys
-import math
+import time, os, sys, math
 import numpy as np
 
 

@@ -10,11 +10,10 @@
 #SBATCH --mail-type=BEGIN,END,FAIL
 #SBATCH --output=logs/test_shapenet.txt
 
-module load tensorboardx/1.2.0-py36-cuda90 torchvision/0.2.1-py36
-module load intel-mkl/2017.2.174 intel-cc/17.0.2.174 intel-fc/17.0.2.174 caffe/0.16.6
-module load pytorch/1.1.0-py36-cuda90 cuda/9.2.88 gcc/6.4.0 eigen/3.2.9 python/3.6.1 xfce/4.12
+# module load tensorboardx/1.2.0-py36-cuda90 torchvision/0.2.1-py36
+# module load intel-mkl/2017.2.174 intel-cc/17.0.2.174 intel-fc/17.0.2.174 caffe/0.16.6
+# module load pytorch/1.1.0-py36-cuda90 cuda/9.2.88 gcc/6.4.0 eigen/3.2.9 python/3.6.1 xfce/4.12
 
-#CUDA_VISIBLE_DEVICES="1" \
 python train.py \
 --dataset="shapenet" \
 --data_dir="datasets/ShapeNet" \
@@ -30,9 +29,11 @@ python train.py \
 --neuron_sparsity=0.782 \
 --random_sparsity_seed=0 \
 --resource_list_type="grad_flops" \
---enable_test \
---resume_path="models/shapenet/RANP_f/sz64_d64_s1_pruning0.782/model/model_epoch99.pth" \
---enable_viz
+--test_target_class=-1 \
+--enable_train \
+--batch=1
 
-#--resume_path="models/shapenet/RANP_f/sz64_d64_s1_pruning0.782/model/model_epoch99.pth"
-#--enable_layer_neuron_display \
+# --resume_path="models/shapenet/RANP_f/model_epoch99.pth" \
+# --enable_test \
+# --enable_viz \
+# --enable_layer_neuron_display \

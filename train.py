@@ -1,4 +1,4 @@
-import os, torch, time, argparse, math, copy
+import os, torch, time, math, copy
 import numpy as np
 import torch.optim as optim
 import torch.nn as nn
@@ -21,12 +21,13 @@ def train(model, dataset, optimizer, writer, args):
   status = {}
   train_loss = AverageMeter()
   duration, counts = 0, 0
+  dataset_len = len(dataset)
 
   for param_group in optimizer.param_groups:
     param_group['lr'] = args.lr * math.exp((1 - args.current_epoch) * args.lr_decay)
 
   time_start = time.time()
-  current_iter = args.current_epoch * len(dataset)
+  current_iter = args.current_epoch * dataset_len
 
   for idx, data in enumerate(dataset):
     input, gt = data['x'], data['y']
@@ -56,14 +57,14 @@ def train(model, dataset, optimizer, writer, args):
     optimizer.step()
 
     train_loss.update(loss.item(), actual_batch)
-    print('Epoch: {}, batch: {}, train loss: {:.4f}'.format(args.current_epoch, idx, train_loss.avg))
+    print('Epoch: {}, batch: {}/{}, train loss: {:.4f}'.format(args.current_epoch, idx, dataset_len, train_loss.avg))
 
     current_iter += 1
     train_iter_result = {'mode': 'train', 'batch_iter': current_iter, 'train_loss_iter': train_loss.avg}
     write_to_tensorboard('scalar', writer, train_iter_result)
 
   if args.enable_ssc_unet:
-    print('=====> Zhiwei, avg time: {}s over {} loops.'.format(duration / counts, counts))
+    print('=====> Avg time: {}s over {} loops.'.format(duration / counts, counts))
 
   duration = time.time() - time_start
   iou_value = iou(status, class_first=True)
@@ -78,6 +79,7 @@ def valid(model, dataset, writer, args):
   status = {}
   valid_loss = AverageMeter()
   time_start = time.time()
+  dataset_len = len(dataset)
 
   for idx, data in enumerate(dataset):
     input, gt = data['x'], data['y']
@@ -92,7 +94,7 @@ def valid(model, dataset, writer, args):
     loss = criterion(prediction, gt)
     valid_loss.update(loss.item(), actual_batch)
     store_voxel(status, data, prediction, gt)
-    print('Epoch: {}, batch: {}, valid loss: {:.4f}'.format(args.current_epoch, idx, valid_loss.avg))
+    print('Epoch: {}, batch: {}/{}, valid loss: {:.4f}'.format(args.current_epoch, idx, dataset_len, valid_loss.avg))
 
   duration = time.time() - time_start
   iou_value = iou(status, class_first=True)
@@ -111,19 +113,38 @@ def test(model, dataset, args):
   for idx, data in enumerate(dataset):
     time_start = time.time()
     input, gt = data['x'], data['y']
+    file_path = data['file_path'][0]
+    class_offset = data['class_offset'][0]
+    num_class = data['num_class'][0]
+    name = file_path.split('/')[-1]
+    name = name.split('.')[0]
 
     if args.enable_cuda:
       input, gt = input.cuda(), gt.cuda()
 
     prediction = model(input)
     mask = (input[0, 0].detach().cpu().numpy() == 1)
-    voxel = prediction[0].argmax(0).detach().cpu().numpy()
+    voxel = prediction[0][class_offset : class_offset + num_class].argmax(0).detach().cpu().numpy()
     voxel = np.reshape(voxel, (args.spatial_size, args.spatial_size, args.spatial_size))
     duration = time.time() - time_start
     print('Test, batch: {}, time: {:.4f}s'.format(idx, duration))
+    enable_save = False
+    close_time = 1
 
     if args.enable_viz:
-      viz_voxel(voxel=voxel, mask=mask, enable_close_time=0)
+      if idx != 1: continue
+      viz_voxel(voxel=voxel, mask=mask, enable_close_time=close_time, data_root='viz_figures', enable_save=enable_save,
+                title='input_{}_left'.format(name), elevation=30, azimuth=-45, fixed_color='white')
+      viz_voxel(voxel=voxel, mask=mask, enable_close_time=close_time, data_root='viz_figures', enable_save=enable_save,
+                title='input_{}_right'.format(name), elevation=30, azimuth=45, fixed_color='white')
+      viz_voxel(voxel=voxel, mask=mask, enable_close_time=close_time, data_root='viz_figures', enable_save=enable_save,
+                title='prediction_{}_left'.format(name), elevation=30, azimuth=-45)
+      viz_voxel(voxel=voxel, mask=mask, enable_close_time=close_time, data_root='viz_figures', enable_save=enable_save,
+                title='prediction_{}_right'.format(name), elevation=30, azimuth=45)
+      viz_voxel(voxel=gt.squeeze().cpu().numpy(), mask=mask, data_root='viz_figures', enable_save=enable_save,
+                enable_close_time=close_time, title='GT_{}_left'.format(name), elevation=30, azimuth=-45)
+      viz_voxel(voxel=gt.squeeze().cpu().numpy(), mask=mask, data_root='viz_figures', enable_save=enable_save,
+                enable_close_time=0, title='GT_{}_right'.format(name), elevation=30, azimuth=45)
 
 
 if __name__ == '__main__':
@@ -238,11 +259,11 @@ if __name__ == '__main__':
                       enable_random_trans=False, enable_random_rotate=False, enable_voxel_gt=True,
                       enable_hard_padding=args.enable_hard_padding)
   validset = SHAPENET('valid', args.valid_spatial_size, dataset_dim, dataset_scale, args.data_dir, enable_voxel_gt=True,
-                      enable_hard_padding=args.enable_hard_padding)
+                      enable_hard_padding=args.enable_hard_padding, target_class=args.test_target_class)
   testset = SHAPENET('test', args.valid_spatial_size, dataset_dim, dataset_scale, args.data_dir,
                      enable_random_trans=False, enable_random_rotate=False, enable_voxel_gt=True,
                      enable_hard_padding=args.enable_hard_padding)
-  train_dataloader = DataLoader(trainset, batch_size=args.batch, num_workers=args.batch, shuffle=True)
+  train_dataloader = DataLoader(trainset, batch_size=args.batch, num_workers=args.batch * 4, shuffle=True)
   valid_dataloader = DataLoader(validset, batch_size=1, num_workers=4, shuffle=False)
   test_dataloader = DataLoader(testset, batch_size=1, num_workers=4, shuffle=False)
 
@@ -397,7 +418,6 @@ if __name__ == '__main__':
     else:
       resume_paths = [args.resume_path]
 
-    args.enable_viz = False
     duration = 0
     print('Start of testing ...')
 
@@ -412,7 +432,13 @@ if __name__ == '__main__':
 
         with torch.no_grad():
           time_start = time.time()
-          mean_iou, test_loss = valid(model, valid_dataloader, writer, args)  # testset has ground truth so use valid() # TODO replace validset by testset
+
+          if args.enable_viz:
+            mean_iou, test_loss = None, None
+            test(model, valid_dataloader, args)
+          else:
+            mean_iou, test_loss = valid(model, valid_dataloader, writer, args)  # testset has ground truth so use valid() # TODO replace validset by testset
+
           duration += time.time() - time_start
 
         torch.cuda.empty_cache()
