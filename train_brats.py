@@ -5,7 +5,7 @@ import torch.nn as nn
 from tensorboardX import SummaryWriter
 from torch.utils.data import DataLoader
 from third_party.unet.model import UNet3D, ResidualUNet3D
-from third_party.miccai.Dataloader.dataloader import BraTSDataset
+from third_party.miccai.Dataloader.dataloader import BraTSDataset, multi_slice_viewer
 from pruning.pytorch_snip.prune import pruning, apply_prune_mask_3dunet, apply_hidden_mask
 from pruning.pytorch_snip.prune import do_statistics_model, dump_neuron_per_layer
 from pruning_related import refine_model
@@ -14,10 +14,10 @@ from third_party.BraTS2018_tumor.data.singlepath import SingleData
 from third_party.BraTS2018_tumor.data.data_utils import init_fn
 from third_party.BraTS2018_tumor.models.criterions import cross_entropy_dice
 from third_party.thop.thop.profile import profile
-from aux.viz_voxel import viz_voxel
 from aux.utils import model_transfer_last_layer, get_model_state_dict, load_optimizer_state_dict
 from aux.utils import check_dir, weight_init, AverageMeter, write_to_tensorboard
 from configs import set_config
+import matplotlib.pyplot as plt
 
 
 def calculate_accuracy(estimation, target, eps=1e-8):
@@ -177,25 +177,34 @@ def test(model, dataset, args):
   model.eval()
 
   for idx, data in enumerate(dataset):
-    time_start = time.time()
-
     if isinstance(data, dict):
-      input, gt = data['x'], data['y']
+      inputs, gt = data['x'], data['y']
     else:
-      input, gt = data[0], data[1]
+      inputs, gt = data[0], data[1]
 
     if args.enable_cuda:
-      input, gt = input.cuda(), gt.cuda()
+      inputs, gt = inputs.cuda(), gt.cuda()
 
-    prediction = model(input)
-    mask = (input[0, 0].detach().cpu().numpy() == 1)
-    voxel = prediction[0].argmax(0).detach().cpu().numpy()
-    voxel = np.reshape(voxel, (args.spatial_size, args.spatial_size, args.spatial_size))
-    duration = time.time() - time_start
-    print('Test, batch: {}, time: {:.4f}s'.format(idx, duration))
+    prediction = model(inputs)
+    name = data[2][0]
+    inputs = np.transpose(inputs[0].cpu().numpy(), (0, 3, 2, 1))
+    gt = np.transpose(gt[0].cpu().numpy(), (2, 1, 0))
+    prediction = np.transpose(np.argmax(prediction[0].cpu().numpy(), 0), (2, 1, 0))
+    viz_data = [inputs[0], inputs[1], inputs[2], inputs[3], gt, prediction]
+    viz_disp = ['t1', 't1ce', 't2', 'flair', 'gt', 'pred']
 
-    if args.enable_viz:
-      viz_voxel(voxel=voxel, mask=mask, enable_close_time=5)
+    print(name)
+    multi_slice_viewer('manual', viz_data, viz_disp)
+    plt.show()
+
+    index = int(input('please input a number:\n'))
+    if index >= 0:
+      for k in range(6):
+        plt.figure()
+        plt.imshow(viz_data[k][index])
+        plt.axis(False)
+        plt.savefig('viz_figures/brats/{}_{}_index{}.eps'.format(name, viz_disp[k], index), format='eps')
+        plt.close()
 
 
 if __name__ == '__main__':
@@ -489,7 +498,6 @@ if __name__ == '__main__':
     else:
       resume_paths = [args.resume_path]
 
-    args.enable_viz = False
     duration = 0
     print('Start of testing ...')
 
@@ -504,7 +512,12 @@ if __name__ == '__main__':
 
         with torch.no_grad():
           time_start = time.time()
-          valid(model, valid_dataloader, writer, valid_set.names, args)  # testset has ground truth so use valid()
+
+          if not args.enable_viz:
+            valid(model, valid_dataloader, writer, valid_set.names, args)  # testset has ground truth so use valid()
+          else:
+            test(model, valid_dataloader, args)
+
           duration += time.time() - time_start
 
         torch.cuda.empty_cache()

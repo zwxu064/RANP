@@ -17,11 +17,14 @@
 # Environment
 - Dependency
   ```
-  conda create -n RANP python=3.6
+  conda create -n RANP python=3.6.12
   source activate RANP
-  conda install pytorch=1.1.0 torchvision cudatoolkit=9 -c pytorch
+  conda install pytorch=1.1.0 torchvision cudatoolkit=9.0 -c pytorch
   conda install -c conda-forge tensorboardx
-  conda install -c anaconda scipy==1.3
+  conda install -c anaconda scipy==1.3.2
+  conda install -c conda-forge nibabel==3.2.1
+  conda install -c conda-forge nilearn==0.7.0
+  conda install -c anaconda pytables==3.6.1
   ```
 
 - Datasets and proprocessing
