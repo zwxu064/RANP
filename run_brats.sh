@@ -27,12 +27,11 @@ python train_brats.py \
 --number_of_fmaps 4 \
 --neuron_sparsity=0.7817 \
 --resource_list_type="grad_flops" \
---enable_test \
+--enable_train \
 --valid_spatial_size=192 \
---resume_path="models/brats18/RANP_f/model_epoch197.pth" \
---enable_viz
 
+# --enable_test
+# --enable_viz
 # --neuron_sparsity=0.7817
 # --resume_path="models/brats18/RANP_f/model_epoch197.pth"
-# --enable_train
 # --enable_layer_neuron_display

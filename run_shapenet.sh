@@ -31,8 +31,8 @@ python train.py \
 --resource_list_type="grad_flops" \
 --test_target_class=-1 \
 --enable_train \
---batch=1
 
+# --batch=1
 # --resume_path="models/shapenet/RANP_f/model_epoch99.pth" \
 # --enable_test \
 # --enable_viz \

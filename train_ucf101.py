@@ -33,6 +33,7 @@ if __name__ == '__main__':
     opt.std = get_std(opt.norm_value)
     opt.store_name = '_'.join([opt.dataset, opt.model, str(opt.width_mult) + 'x',
                                opt.modality, str(opt.sample_duration)])
+    opt.batch = opt.n_threads
     print(opt)
     torch.manual_seed(opt.manual_seed)
     model, parameters = generate_model(opt)
@@ -129,53 +130,54 @@ if __name__ == '__main__':
                                                                   resource_list_type=opt.resource_list_type)
     del model_full
 
-    if opt.model == 'mobilenetv2':  # was in rebuttal previously
-        json_path = 'data/ucf101/ucf101_{}.json'.format(opt.model)
-        network_connection_dict = create_network_connection_dict(model, json_network_connection=json_path)
-    else:
-        json_path, network_connection_dict = None, None
+    if opt.enable_neuron_prune:
+        if opt.model == 'mobilenetv2':  # was in rebuttal previously
+            json_path = 'data/ucf101/ucf101_{}.json'.format(opt.model)
+            network_connection_dict = create_network_connection_dict(model, json_network_connection=json_path)
+        else:
+            json_path, network_connection_dict = None, None
 
-    file_path = 'data/ucf101/ucf101_{}_sz{}_{}_{}.npy'.format(
-        opt.model, opt.prune_spatial_size,
-        opt.weight_init, grad_mode)
+        file_path = 'data/ucf101/ucf101_{}_sz{}_{}_{}.npy'.format(
+            opt.model, opt.prune_spatial_size,
+            opt.weight_init, grad_mode)
 
-    train_loader_pruning = torch.utils.data.DataLoader(
-        training_data, batch_size=1, shuffle=False, num_workers=opt.n_threads,
-        pin_memory=True)
+        train_loader_pruning = torch.utils.data.DataLoader(
+            training_data, batch_size=1, shuffle=False, num_workers=0,
+            pin_memory=True)
 
-    outputs = pruning(file_path, model, train_loader_pruning, criterion, opt,
-                      enable_3dunet=False, enable_hidden_sum=False, width=0,
-                      resource_list=resource_list, network_name=opt.model)
-    assert outputs[0] == 0
-    neuron_mask_clean, hidden_mask = outputs[1], outputs[2]
-    n_params_org, n_neurons_org = do_statistics_model(model)
+        outputs = pruning(file_path, model, train_loader_pruning, criterion, opt,
+                          enable_3dunet=False, enable_hidden_sum=False, width=0,
+                          resource_list=resource_list, network_name=opt.model)
+        assert outputs[0] == 0
+        neuron_mask_clean, hidden_mask = outputs[1], outputs[2]
+        n_params_org, n_neurons_org = do_statistics_model(model)
 
-    if opt.model == 'i3d':
-        new_model = refine_model_I3D(model, neuron_mask_clean)
-    else:
-        new_model = refine_model_classification(model,
-                                                neuron_mask_clean,
-                                                opt.model,
-                                                network_connection_dict=network_connection_dict,
-                                                enable_raw_grad=opt.enable_raw_grad)
-    del model
-    model = new_model.cpu()
+        if opt.model == 'i3d':
+            new_model = refine_model_I3D(model, neuron_mask_clean)
+        else:
+            new_model = refine_model_classification(model,
+                                                    neuron_mask_clean,
+                                                    opt.model,
+                                                    network_connection_dict=network_connection_dict,
+                                                    enable_raw_grad=opt.enable_raw_grad)
+        del model
+        model = new_model.cpu()
 
-    # print('New model:', model)
+        # print('New model:', model)
 
-    if hasattr(model, 'module'):
-        weight_init(model.module, mode=opt.weight_init)
-    else:
-        weight_init(model, mode=opt.weight_init)
+        if hasattr(model, 'module'):
+            weight_init(model.module, mode=opt.weight_init)
+        else:
+            weight_init(model, mode=opt.weight_init)
 
-    n_params_refined, n_neurons_refined = do_statistics_model(model)
-    print('Statistics, org, params: {}, neurons: {}; refined, params: {} ({:.4f}%), neurons: {} ({:.4f}%)' \
-          .format(n_params_org,
-                  n_neurons_org,
-                  n_params_refined,
-                  n_params_refined * 100 / n_params_org,
-                  n_neurons_refined,
-                  n_neurons_refined * 100 / n_neurons_org))
+        n_params_refined, n_neurons_refined = do_statistics_model(model)
+        print('Statistics, org, params: {}, neurons: {}; refined, params: {} ({:.4f}%), neurons: {} ({:.4f}%)' \
+              .format(n_params_org,
+                      n_neurons_org,
+                      n_params_refined,
+                      n_params_refined * 100 / n_params_org,
+                      n_neurons_refined,
+                      n_neurons_refined * 100 / n_neurons_org))
 
     # Calculate Flops, Params, Memory of New Model
     model_flops = copy.deepcopy(model)
