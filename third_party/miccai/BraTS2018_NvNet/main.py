@@ -10,7 +10,7 @@ from torch import nn
 from torch import optim
 from torch.optim import lr_scheduler
 from utils import Logger,load_old_model
-from train import train_epoch
+from train_shapenet import train_epoch
 from validation import val_epoch
 from nvnet import NvNet
 from metrics import CombinedLoss, SoftDiceLoss

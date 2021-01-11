@@ -7,7 +7,7 @@ from third_party.efficient_3DCNN.model import generate_model
 from third_party.unet.model import UNet3D
 from third_party.thop.thop.profile import profile
 from pruning.pytorch_snip.prune import pruning
-from train import set_config as set_shapenet_config
+from train_shapenet import set_config as set_shapenet_config
 from train_brats import set_config as set_brats_config
 from utils import weight_init
 

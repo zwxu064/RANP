@@ -7,6 +7,7 @@ sys.path.append('./pruning/pytorch_snip')
 from prune_utils import check_same, convert_dim_conv2fully, resume_dim_conv2fully, cal_channel_prune_grad
 from mp_prune import message_passing_prune
 from video_classification import remove_redundant_3dmobilenet, remove_redundant_I3D
+from torch.autograd import Variable
 
 
 enable_verbose = False
@@ -1161,25 +1162,48 @@ def pruning(file_name,
       if ((batch_total > 1000) and idx % 100 == 0) or (batch_total <= 1000):
         print('Pruning, batch: {} / {}'.format(idx + 1, batch_total))
 
-      if isinstance(data, list):
-        input, gt = data[0], data[1]
-      else:
-        input, gt = data['x'], data['y']
-
-      actual_batch = input.size(0)
-
-      if args.enable_cuda:
-        input, gt = input.cuda(), gt.cuda()
-
       if True:
         model.zero_grad()  # original snip pytorch code due to learnable mask that is not in optimizer
       else:
         optimizer.zero_grad()  # this is regular one that all learnable parameters are set into optimizer
 
-      prediction = model(input)
-      prediction = prediction.reshape(actual_batch, args.n_class, -1)
-      gt = gt.reshape(actual_batch, -1)
-      loss = criterion(prediction, gt)
+      # For stereo and otherwise
+      if args.dataset in {'sceneflow'}:
+        imgL, imgR, disp_L = data
+
+        imgL = Variable(torch.FloatTensor(imgL))
+        imgR = Variable(torch.FloatTensor(imgR))
+        disp_L = Variable(torch.FloatTensor(disp_L))
+        
+        if args.enable_cuda:
+          imgL, imgR, disp_L = imgL.cuda(), imgR.cuda(), disp_L.cuda()
+        
+        mask = disp_L < args.maxdisp
+        mask.detach_()
+
+        output1, output2, output3 = model(imgL, imgR)
+        output1 = torch.squeeze(output1, 1)
+        output2 = torch.squeeze(output2, 1)
+        output3 = torch.squeeze(output3, 1)
+        loss = 0.5 * F.smooth_l1_loss(output1[mask], disp_L[mask], reduction='mean') \
+               + 0.7 * F.smooth_l1_loss(output2[mask], disp_L[mask], reduction='mean') \
+               + F.smooth_l1_loss(output3[mask], disp_L[mask], reduction='mean')
+      else:
+        if isinstance(data, list):
+          input, gt = data[0], data[1]
+        else:
+          input, gt = data['x'], data['y']
+
+        actual_batch = input.size(0)
+
+        if args.enable_cuda:
+          input, gt = input.cuda(), gt.cuda()
+
+        prediction = model(input)
+        prediction = prediction.reshape(actual_batch, args.n_class, -1)
+        gt = gt.reshape(actual_batch, -1)
+        loss = criterion(prediction, gt)
+
       loss.backward()
 
       kernel_grad_abs, hidden_grad_abs = get_mask_grad(model,
@@ -1218,6 +1242,8 @@ def pruning(file_name,
         elif network_name == 'mobilenetv2':
           kernel_mask_clean = remove_redundant_3dmobilenet(kernel_mask)
         elif network_name == 'i3d':
+          kernel_mask_clean = remove_redundant_I3D(kernel_mask)
+        elif network_name == 'psm':
           kernel_mask_clean = remove_redundant_I3D(kernel_mask)
         else:
           assert False
@@ -1260,6 +1286,21 @@ def pruning(file_name,
                                           resource_list_lambda=args.resource_list_lambda,
                                           enable_layer_neuron_display=False)
         kernel_mask_clean = remove_redundant_I3D(kernel_mask)
+      elif network_name == 'psm':
+        kernel_mask = neuron_prune_3dunet(kernel_grads_abs_average,
+                                       args.neuron_sparsity,
+                                       args.acc_mode,
+                                       layer_sparsity_list=args.layer_sparsity_list,
+                                       random_method=args.random_method,
+                                       random_sparsity=args.random_sparsity,
+                                       random_sparsity_seed=args.random_sparsity_seed,
+                                       resource_list_type=args.resource_list_type,
+                                       resource_list=resource_list,
+                                       resource_list_lambda=args.resource_list_lambda,
+                                       enable_layer_neuron_display=False)
+        # TODO
+        kernel_mask_clean = kernel_mask
+        # kernel_mask_clean = remove_redundant_psm(kernel_mask)
       else:
         kernel_mask = neuron_prune(kernel_grads_abs_average,
                                    args.neuron_sparsity, args.acc_mode)

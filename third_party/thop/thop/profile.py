@@ -72,6 +72,8 @@ def profile(model,
                 or hasattr(m, "total_params") \
                 or hasattr(m, "total_memory") \
                 or hasattr(m, "output_size"):
+            if isinstance(m, torch.nn.ReLU): return
+
             logger.warning("Either .total_ops or .total_params is already defined in %s."
                            "Be careful, it might change your code's behavior." % str(m))
 

@@ -130,6 +130,16 @@ def set_config():
   parser.add_argument('--resume_path', default='', type=str, help='Save data (.pth) of previous training')
   parser.add_argument('--sample_duration', default=None, type=int, help='Temporal duration of inputs')
 
+  # Stereo
+  parser.add_argument('--maxdisp', type=int, default=192, help='maxium disparity')
+  parser.add_argument('--stereo_model', default='stackhourglass', help='select model')
+  parser.add_argument('--datapath', default='dataset/', help='datapath')
+  parser.add_argument('--epochs', type=int, default=10, help='number of epochs to train')
+  parser.add_argument('--loadmodel', default=None, help='load model')
+  parser.add_argument('--savemodel', default='./', help='save model')
+  parser.add_argument('--no-cuda', action='store_true', default=False, help='enables CUDA training')
+  parser.add_argument('--seed', type=int, default=1, metavar='S', help='random seed (default: 1)')
+
   args = parser.parse_args()
 
   #
@@ -150,20 +160,20 @@ def set_config():
   args.device = 'cuda' if args.enable_cuda else 'cpu'
 
   # Auto config
-  num_classes = {'shapenet': 50, 'brats': 5, 'ucf101': 101}
-  batch = {'shapenet': 4, 'brats': 1, 'ucf101': 8}
-  spatial_size = {'shapenet': 64, 'brats': 128, 'ucf101': None}
-  lr = {'shapenet': 0.1, 'brats': 0.001, 'ucf101': 0.1}
-  epoch = {'shapenet': 200, 'brats': 200, 'ucf101': 250}
-  lr_decay = {'shapenet': 0.04, 'brats': 0.04, 'ucf101': 0}
+  num_classes = {'shapenet': 50, 'brats': 5, 'ucf101': 101, 'sceneflow': 192}
+  batch = {'shapenet': 4, 'brats': 1, 'ucf101': 8, 'sceneflow': 12}
+  spatial_size = {'shapenet': 64, 'brats': 128, 'ucf101': None, 'sceneflow': None}
+  lr = {'shapenet': 0.1, 'brats': 0.001, 'ucf101': 0.1, 'sceneflow': 0.001}
+  epoch = {'shapenet': 200, 'brats': 200, 'ucf101': 250, 'sceneflow': 15}
+  lr_decay = {'shapenet': 0.04, 'brats': 0.04, 'ucf101': 0, 'sceneflow': None}
   lr_steps = {'mobilenetv2': [40, 55, 65, 70, 200, 250],
               'i3d': [50, 100, 150, 200]}
-  resource_list_lambda = {'shapenet': 11, 'brats': 15, 'ucf101': 80}
-  neuron_sparsity = {'shapenet': 0.7824, 'brats': 0.7817}
+  resource_list_lambda = {'shapenet': 11, 'brats': 15, 'ucf101': 80, 'sceneflow': 0}
+  neuron_sparsity = {'shapenet': 0.7824, 'brats': 0.7817, 'sceneflow': 0}
   neuron_sparsity_ucf101 = {'mobilenetv2': 0.3315, 'i3d': 0.2532}
   sample_size_ucf101 = {'mobilenetv2': 112, 'i3d': 224}
-  sample_duration = {'shapenet': 0, 'brats': 0, 'ucf101': 16}
-  scale = {'shapenet': 10, 'brats': 1, 'ucf101': 16}
+  sample_duration = {'shapenet': 0, 'brats': 0, 'ucf101': 16, 'sceneflow': None}
+  scale = {'shapenet': 10, 'brats': 1, 'ucf101': 16, 'sceneflow': None}
 
   args.n_class = num_classes[args.dataset]
   args.batch = batch[args.dataset] if args.batch is None else args.batch

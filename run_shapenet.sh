@@ -14,7 +14,7 @@
 # module load intel-mkl/2017.2.174 intel-cc/17.0.2.174 intel-fc/17.0.2.174 caffe/0.16.6
 # module load pytorch/1.1.0-py36-cuda90 cuda/9.2.88 gcc/6.4.0 eigen/3.2.9 python/3.6.1 xfce/4.12
 
-python train.py \
+python train_shapenet.py \
 --dataset="shapenet" \
 --data_dir="datasets/ShapeNet" \
 --resume_epoch=-1 \

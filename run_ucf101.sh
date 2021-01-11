@@ -28,7 +28,8 @@ python train_ucf101.py \
 --n_val_samples 3 \
 --resource_list_type "grad_flops" \
 --neuron_sparsity 0.3315 \
---enable_train
+--enable_test \
+--resume_path="models/ucf101_mobilenetv2/RANP_f/ucf101_mobilenetv2_1.0x_RGB_16_best.pth"
 
 # --enable_test \
 # --resume_path="models/ucf101_mobilenetv2/RANP_f/ucf101_mobilenetv2_1.0x_RGB_16_best.pth"
