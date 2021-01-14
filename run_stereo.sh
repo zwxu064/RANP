@@ -18,9 +18,10 @@ python train_stereo.py \
 --datapath ./datasets/SceneFlow/ \
 --epochs 15 \
 --savemodel ./trained/ \
---neuron_sparsity=0.1 \
+--neuron_sparsity=0.8 \
 --resource_list_type "grad_flops" \
---batch=1 \
+--batch=12 \
+--PSM_mode="max" \
 # --loadmodel ./trained/checkpoint_6.tar \
 
 # python finetune.py --maxdisp 192 \

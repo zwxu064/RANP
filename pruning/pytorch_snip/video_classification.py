@@ -221,3 +221,125 @@ def remove_redundant_I3D(keep_masks, encoder_layer_index=None):
       former_merge_out_c_list = former_merge_out_c_list.float()
 
   return keep_masks
+
+
+# ===========================================
+# For stereo vision on PSM, 14th January 2021
+def remove_redundant_PSM(keep_masks, mode='max'):
+  if keep_masks is None:
+    return
+
+  keep_masks = copy.deepcopy(keep_masks)
+  n_layers = len(keep_masks) // 2
+
+  # ===========================================
+  # Valid neuron number in every layer
+  valid_neuron_list =[]
+  fix_list = [72, 80, 88]  # the last 3 hourglasses for 3 losses
+  deconv_list = [69, 70, 77, 78, 85, 86]  # !!! Need to swap in_c and out_c of deconv
+  for idx in range(n_layers):
+    current_layer = keep_masks[2 * idx]
+
+    if idx in deconv_list:  # !!! Deconv should be paid attention
+      current_layer = current_layer.transpose(1, 0).contiguous()
+
+    if idx in fix_list:
+      out_c = current_layer.size(0)
+    else:
+      out_c = (current_layer.view(current_layer.size(0), -1).sum(1) != 0).float().sum()
+      out_c = out_c.cpu().numpy().item()
+
+    in_c = current_layer.size(1)
+    ksz = current_layer.size(2)
+    klen = len(current_layer.size())
+    valid_neuron_list.append([int(out_c), int(in_c), int(ksz), int(klen)])
+
+  # ===========================================
+  # Feature extraction plus ResNet type
+  plus_list = []
+  plus_list.append([[2, 4, 6, 8], []])  # [[source_layers], [dst_layers]]
+  plus_list.append([[10] + [*range(11, 41 + 1, 2)], []])  # ResNet type
+  plus_list.append([[43] + [*range(44, 54 + 1, 2)], []])  # ResNet type
+  for i in range(len(plus_list)):
+    src_list = plus_list[i][0]
+    dst_list = plus_list[i][1]
+    valid_neuron_plus = [valid_neuron_list[j][0] for j in src_list]
+    valid_neuron_plus_final = max(valid_neuron_plus) if mode == 'max' else min(valid_neuron_plus)
+    for j in src_list:
+      valid_neuron_list[j][0] = valid_neuron_plus_final
+    for j in dst_list:
+      valid_neuron_list[j][1] = valid_neuron_plus_final
+
+  # ===========================================
+  # Feature extraction concat
+  concat_list = []
+  concat_list.append([[41, 54, 55, 56, 57, 58], [59]])  # multiscale type
+  for i in range(len(concat_list)):
+    src_list = concat_list[i][0]
+    dst_list = concat_list[i][1]
+    valid_neuron_concat = [valid_neuron_list[j][0] for j in src_list]
+    for j in dst_list:
+      valid_neuron_list[j][1] = int(sum(valid_neuron_concat))
+
+  # ===========================================
+  # 3D conv plus 1
+  plus_list = []
+  plus_list.append([[62, 64], [65]])  # for the addition of every two layers
+  plus_list.append([[64, 70], [71, 73]])
+  plus_list.append([[64, 78], [79, 81]])
+  plus_list.append([[64, 86], [87]])
+  valid_neuron_plus = [valid_neuron_list[j][0] for j in [62, 64, 70, 78, 86]]
+  valid_neuron_plus_final = max(valid_neuron_plus) if mode == 'max' else min(valid_neuron_plus)
+  for i in range(len(plus_list)):
+    src_list = plus_list[i][0]
+    dst_list = plus_list[i][1]
+    for j in src_list:
+      valid_neuron_list[j][0] = valid_neuron_plus_final
+    for j in dst_list:
+      valid_neuron_list[j][1] = valid_neuron_plus_final
+
+  # ===========================================
+  # 3D conv plus 2
+  plus_list = []
+  plus_list.append([[66, 69], [70]])
+  plus_list.append([[66, 69, 74], [75]])
+  plus_list.append([[66, 77], [78]])
+  plus_list.append([[66, 77, 82], [83]])
+  plus_list.append([[66, 85], [86]])
+  valid_neuron_plus = [valid_neuron_list[j][0] for j in [66, 69, 74, 77, 82, 85]]
+  valid_neuron_plus_final = max(valid_neuron_plus) if mode == 'max' else min(valid_neuron_plus)
+  for i in range(len(plus_list)):
+    src_list = plus_list[i][0]
+    dst_list = plus_list[i][1]
+    for j in src_list:
+      valid_neuron_list[j][0] = valid_neuron_plus_final
+    for j in dst_list:
+      valid_neuron_list[j][1] = valid_neuron_plus_final
+
+  # ===========================================
+  # Boardcast, multiscale in_c, 54 to [55, 56, 57, 58], set in_channels
+  broadcast_list = []
+  broadcast_list.append([54, [55, 56, 57, 58]])
+  broadcast_list.append([8, [9, 11]])
+  broadcast_list.append([41, [42, 44]])
+  for i in range(len(broadcast_list)):
+    src_layer = broadcast_list[i][0]
+    dst_list = broadcast_list[i][1]
+    for j in dst_list:
+      valid_neuron_list[j][1] = valid_neuron_list[src_layer][0]
+
+  # ===========================================
+  # Fix these since they are assigned values above
+  in_c_fix_list = [11, 44, 59, 71, 73, 79, 81, 87, 70, 75, 78, 83, 86, 55, 56, 57, 58]
+  for l in range(n_layers - 1):
+    next_layer = l + 1
+    current_layer_out_c = valid_neuron_list[l][0]
+    
+    if next_layer not in in_c_fix_list:
+      valid_neuron_list[next_layer][1] = current_layer_out_c
+
+  # ===========================================
+  # Cost volume of left-right image features
+  valid_neuron_list[61][1] = 2 * valid_neuron_list[60][0]
+
+  return valid_neuron_list

@@ -7,6 +7,7 @@ sys.path.append('./pruning/pytorch_snip')
 from prune_utils import check_same, convert_dim_conv2fully, resume_dim_conv2fully, cal_channel_prune_grad
 from mp_prune import message_passing_prune
 from video_classification import remove_redundant_3dmobilenet, remove_redundant_I3D
+from video_classification import remove_redundant_PSM
 from torch.autograd import Variable
 
 
@@ -1244,7 +1245,7 @@ def pruning(file_name,
         elif network_name == 'i3d':
           kernel_mask_clean = remove_redundant_I3D(kernel_mask)
         elif network_name == 'psm':
-          kernel_mask_clean = remove_redundant_I3D(kernel_mask)
+          kernel_mask_clean = remove_redundant_PSM(kernel_mask, mode=args.PSM_mode)
         else:
           assert False
     elif args.enable_neuron_prune:
@@ -1288,31 +1289,36 @@ def pruning(file_name,
         kernel_mask_clean = remove_redundant_I3D(kernel_mask)
       elif network_name == 'psm':
         kernel_mask = neuron_prune_3dunet(kernel_grads_abs_average,
-                                       args.neuron_sparsity,
-                                       args.acc_mode,
-                                       layer_sparsity_list=args.layer_sparsity_list,
-                                       random_method=args.random_method,
-                                       random_sparsity=args.random_sparsity,
-                                       random_sparsity_seed=args.random_sparsity_seed,
-                                       resource_list_type=args.resource_list_type,
-                                       resource_list=resource_list,
-                                       resource_list_lambda=args.resource_list_lambda,
-                                       enable_layer_neuron_display=False)
-        # TODO
-        kernel_mask_clean = kernel_mask
-        # kernel_mask_clean = remove_redundant_psm(kernel_mask)
+                                          args.neuron_sparsity,
+                                          args.acc_mode,
+                                          layer_sparsity_list=args.layer_sparsity_list,
+                                          random_method=args.random_method,
+                                          random_sparsity=args.random_sparsity,
+                                          random_sparsity_seed=args.random_sparsity_seed,
+                                          resource_list_type=args.resource_list_type,
+                                          resource_list=resource_list,
+                                          resource_list_lambda=args.resource_list_lambda,
+                                          enable_layer_neuron_display=False)
+        valid_neuron_list_clean = remove_redundant_PSM(kernel_mask, mode=args.PSM_mode)
       else:
         kernel_mask = neuron_prune(kernel_grads_abs_average,
                                    args.neuron_sparsity, args.acc_mode)
         kernel_mask_clean = remove_redundant(kernel_mask)
 
-    do_statistics(kernel_mask, kernel_mask_clean)
+    if network_name == 'psm':
+      for idx, valid_neuron in enumerate(valid_neuron_list_clean):  # previously use kernel_mask, but no difference I think
+        if valid_neuron[0] == 0:
+          print('All removed at {}th layer of valid_neuron_list'.format(idx // 2))
+          status = -1
+          return [status]
+    else:
+      do_statistics(kernel_mask, kernel_mask_clean)
 
-    for idx, mask in enumerate(kernel_mask_clean):  # previously use kernel_mask, but no difference I think
-      if (mask is not None) and (mask.sum() == 0):
-        print('All removed at {}th layer of kernel_mask_clean'.format(idx // 2))
-        status = -1
-        return [status]
+      for idx, mask in enumerate(kernel_mask_clean):  # previously use kernel_mask, but no difference I think
+        if (mask is not None) and (mask.sum() == 0):
+          print('All removed at {}th layer of kernel_mask_clean'.format(idx // 2))
+          status = -1
+          return [status]
   else:
     kernel_mask_clean = None
 
@@ -1353,7 +1359,10 @@ def pruning(file_name,
 
   status = 0
 
-  return status, kernel_mask_clean, hidden_masks
+  if network_name == 'psm':
+    return status, valid_neuron_list_clean, hidden_masks
+  else:
+    return status, kernel_mask_clean, hidden_masks
 
 
 if __name__ == '__main__':

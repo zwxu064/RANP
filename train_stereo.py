@@ -1,19 +1,25 @@
-import argparse, os, random, torch, time, math, copy
+import os, random, torch, time, math, copy
 import torch.nn as nn
 import torch.backends.cudnn as cudnn
 import torch.optim as optim
 import torch.utils.data, torch.nn.parallel
-import torch.nn.functional as F
-import numpy as np
-from torch.autograd import Variable
 from third_party.PSM.dataloader import listflowfile as lt
 from third_party.PSM.dataloader import SecenFlowLoader as DA
 from third_party.PSM.models import *
 from configs import set_config
 from third_party.thop.thop.profile import profile
 from pruning.pytorch_snip.prune import pruning, do_statistics_model, dump_neuron_per_layer
-from pruning_related import refine_model
+from pruning_related import refine_model_PSM
 from aux.utils import weight_init
+
+
+def display_model_structure(model):
+  idx = 0
+  for key, layer in model.named_modules():
+    if isinstance(layer, (nn.Linear, nn.Conv2d, nn.Conv3d,
+                          nn.ConvTranspose2d, nn.ConvTranspose3d)):
+      print(idx, key, layer.weight.shape)
+      idx += 1
 
 
 def get_model_state_dict(model):
@@ -51,20 +57,14 @@ def train(imgL, imgR, disp_L, model, optimizer):
   mask = disp_true < args.maxdisp
   mask.detach_()
   optimizer.zero_grad()
-  loss = 0
 
-  if args.model == 'stackhourglass':
-    output1, output2, output3 = model(imgL, imgR)
-    output1 = torch.squeeze(output1, 1)
-    output2 = torch.squeeze(output2, 1)
-    output3 = torch.squeeze(output3, 1)
-    loss = 0.5 * F.smooth_l1_loss(output1[mask], disp_true[mask], reduction='mean') \
-           + 0.7 * F.smooth_l1_loss(output2[mask], disp_true[mask], reduction='mean') \
-           + F.smooth_l1_loss(output3[mask], disp_true[mask], reduction='mean')
-  elif args.model == 'basic':
-    output = model(imgL, imgR)
-    output = torch.squeeze(output, 1)
-    loss = F.smooth_l1_loss(output[mask], disp_true[mask], reduction='mean')
+  output1, output2, output3 = model(imgL, imgR)
+  output1 = torch.squeeze(output1, 1)
+  output2 = torch.squeeze(output2, 1)
+  output3 = torch.squeeze(output3, 1)
+  loss = 0.5 * F.smooth_l1_loss(output1[mask], disp_true[mask], reduction='mean') \
+         + 0.7 * F.smooth_l1_loss(output2[mask], disp_true[mask], reduction='mean') \
+         + F.smooth_l1_loss(output3[mask], disp_true[mask], reduction='mean')
 
   loss.backward()
   optimizer.step()
@@ -111,21 +111,15 @@ def main(args):
   # batch_size=12
   TrainImgLoader = torch.utils.data.DataLoader(
     DA.myImageFloder(all_left_img, all_right_img, all_left_disp, True),
-    batch_size=args.batch, shuffle=True, num_workers=0, drop_last=False)
+    batch_size=args.batch, shuffle=True, num_workers=args.batch * 2, drop_last=False)
 
   # batch_size=8
   TestImgLoader = torch.utils.data.DataLoader(
     DA.myImageFloder(test_left_img, test_right_img, test_left_disp, False),
-    batch_size=2, shuffle=False, num_workers=0, drop_last=False)
+    batch_size=8, shuffle=False, num_workers=8, drop_last=False)
 
   # Model
-  if args.model == 'stackhourglass':
-    model = stackhourglass(args.maxdisp)
-  elif args.model == 'basic':
-    model = basic(args.maxdisp)
-  else:
-    model = None
-
+  model = stackhourglass(args.maxdisp)
   weight_init(model, mode=args.weight_init)
 
   # Optimizer
@@ -143,6 +137,8 @@ def main(args):
             verbose=False,
             resource_list_type=args.resource_list_type)
 
+  # display_model_structure(model_full)
+
   del model_full
   print('Full model, flops: {:.4f}G, params: {:.4f}MB, memory: {:.4f}MB' \
         .format(flops_full / 1e9, params_full * 4 / (1024 ** 2), memory_full * 4 / (1024 ** 2)))
@@ -154,7 +150,7 @@ def main(args):
     grad_mode = 'raw' if args.enable_raw_grad else 'abs'
 
     if args.weight_init == 'xn':
-      file_path = 'data/stereo/stereo_kernel_hidden_prune_grad__{}.npy'.format(grad_mode)
+      file_path = 'data/stereo/stereo_kernel_hidden_prune_grad_{}.npy'.format(grad_mode)
     else:
       file_path = 'data/stereo/stereo_kernel_hidden_prune_grad_sz{}_dim{}_init{}_{}.npy' \
         .format(args.weight_init, grad_mode)
@@ -165,11 +161,13 @@ def main(args):
                       enable_3dunet=False, enable_hidden_sum=False,
                       width=None, resource_list=resource_list, network_name='psm')
     assert outputs[0] == 0
-    neuron_mask_clean, hidden_mask = outputs[1], outputs[2]
+
+    # neuron_mask_clean, hidden_mask = outputs[1], outputs[2]
+    valid_neuron_list_clean, hidden_mask = outputs[1], outputs[2]
 
     if args.enable_neuron_prune or args.enable_param_prune:
       n_params_org, n_neurons_org = do_statistics_model(model)
-      new_model = refine_model(model, neuron_mask_clean, enable_3dunet=True, width=args.width)
+      new_model = refine_model_PSM(model, valid_neuron_list_clean)
 
       if False:  # enable_dump_neuron_per_layer:
         dump_neuron_per_layer(copy.deepcopy(model), copy.deepcopy(new_model))
@@ -190,13 +188,16 @@ def main(args):
 
       # Calculate Flops, Params, Memory of New Model
       model_flops = copy.deepcopy(model)
+
+      # display_model_structure(model_flops)
+
       flops, params, memory, _ = profile(model_flops.cuda(),
                                          inputs=(profile_input_L, profile_input_R),
                                          verbose=False,
-                                         resource_list_type=opt.resource_list_type)
+                                         resource_list_type=args.resource_list_type)
       print('New model, flops: {:.4f}G, params: {:.4f}MB, memory: {:.4f}MB' \
             .format(flops / 1e9, params * 4 / (1024 ** 2), memory * 4 / (1024 ** 2)))
-      del model_flops, profile_input
+      del model_flops, profile_input_L, profile_input_R
 
       # For new model
       optimizer = optim.Adam(model.parameters(), lr=args.lr, betas=(0.9, 0.999))
@@ -273,7 +274,6 @@ if __name__ == '__main__':
   torch.cuda.manual_seed_all(seed)
 
   args = set_config()
-  args.model = args.stereo_model
   args.cuda = not args.no_cuda and torch.cuda.is_available()
   torch.manual_seed(args.seed)
 

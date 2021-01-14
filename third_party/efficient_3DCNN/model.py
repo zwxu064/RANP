@@ -8,7 +8,6 @@ def generate_model(opt):
     assert opt.model in ['c3d', 'squeezenet', 'mobilenet', 'resnext', 'resnet',
                          'shufflenet', 'mobilenetv2', 'shufflenetv2', 'i3d']
 
-
     if opt.model == 'c3d':
         from models.c3d import get_fine_tuning_parameters
         model = c3d.get_model(

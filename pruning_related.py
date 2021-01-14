@@ -85,7 +85,6 @@ def refine_model(model, neuron_mask_clean, enable_3dunet=False, width=2, network
         if layer.bias is not None:
           layer.bias = nn.Parameter(layer.bias.new_zeros(former_conv_valid_neurons), requires_grad=True)
 
-
   return refined_model
 
 
@@ -246,6 +245,58 @@ def refine_model_I3D(model, neuron_mask_clean):
           layer.weight.new_zeros(out_c, in_c, ksz, ksz, ksz),
           requires_grad=True)
       elif weight_len == 2:
+        layer.weight = nn.Parameter(
+          layer.weight.new_zeros(out_c, in_c),
+          requires_grad=True)
+        layer.in_features = in_c
+        layer.out_features = out_c
+
+      layer.in_channels = in_c
+      layer.out_channels = out_c
+
+      if layer.bias is not None:
+        layer.bias = nn.Parameter(layer.bias.new_zeros(out_c),
+                                  requires_grad=True)
+
+      layer_idx += 1
+
+    if isinstance(layer, (nn.BatchNorm1d, nn.BatchNorm2d, nn.BatchNorm3d)):
+      out_c = valid_neuron_list[layer_idx - 1][0]
+      layer.weight = nn.Parameter(layer.weight.new_zeros(out_c),
+                                  requires_grad=True)
+      layer.num_features = out_c
+      layer.running_mean = layer.running_mean.new_zeros(out_c)
+      layer.running_var = layer.running_mean.new_ones(out_c)
+
+      if layer.bias is not None:
+        layer.bias = nn.Parameter(layer.bias.new_zeros(out_c),
+                                  requires_grad=True)
+
+  return refined_model
+
+
+def refine_model_PSM(model, valid_neuron_list):
+  refined_model = copy.deepcopy(model)
+
+  # ===========================================
+  layer_idx = 0
+  for key, layer in refined_model.named_modules():
+    if isinstance(layer, (nn.Linear, nn.Conv2d, nn.Conv3d,
+                          nn.ConvTranspose2d, nn.ConvTranspose3d)):
+      if isinstance(layer, (nn.ConvTranspose2d, nn.ConvTranspose3d)):
+        in_c, out_c, ksz, klen = valid_neuron_list[layer_idx]  # This should be paied attention
+      else:
+        out_c, in_c, ksz, klen = valid_neuron_list[layer_idx]  # This is normal
+
+      if klen == 5:
+        layer.weight = nn.Parameter(
+          layer.weight.new_zeros(out_c, in_c, ksz, ksz, ksz),
+          requires_grad=True)
+      elif klen == 4:
+          layer.weight = nn.Parameter(
+            layer.weight.new_zeros(out_c, in_c, ksz, ksz),
+            requires_grad=True)
+      elif klen == 2:
         layer.weight = nn.Parameter(
           layer.weight.new_zeros(out_c, in_c),
           requires_grad=True)

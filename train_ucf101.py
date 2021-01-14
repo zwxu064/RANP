@@ -80,7 +80,7 @@ if __name__ == '__main__':
         training_data = get_training_set(opt, spatial_transform,
                                          temporal_transform, target_transform)
         train_loader = torch.utils.data.DataLoader(
-            training_data, batch_size=opt.batch, shuffle=True, num_workers=opt.n_threads,
+            training_data, batch_size=opt.batch, shuffle=True, num_workers=0,
             pin_memory=True)
         train_logger = Logger(
             os.path.join(opt.checkpoint_dir, 'train.log'),
@@ -110,7 +110,7 @@ if __name__ == '__main__':
         validation_data = get_validation_set(
             opt, spatial_transform, temporal_transform, target_transform)
         val_loader = torch.utils.data.DataLoader(
-            validation_data, batch_size=16, shuffle=False, num_workers=opt.n_threads,
+            validation_data, batch_size=16, shuffle=False, num_workers=0,
             pin_memory=True)
         val_logger = Logger(
             os.path.join(opt.checkpoint_dir, 'val.log'), ['epoch', 'loss', 'prec1', 'prec5'])

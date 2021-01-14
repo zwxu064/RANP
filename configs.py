@@ -5,7 +5,7 @@ import os
 def set_config():
   parser = argparse.ArgumentParser(description='configures of project')
   parser.add_argument('--batch', type=int, default=None, help='batch size in training')
-  parser.add_argument('--dataset', default='shapenet', type=str, help="shapenet, brats, ucf101")
+  parser.add_argument('--dataset', default='shapenet', type=str.lower, choices={'shapenet', 'brats', 'ucf101', 'sceneflow'})
   parser.add_argument('--data_dir', type=str, default='dataset', help='data directory')
   parser.add_argument('--spatial_size', type=int, default=None, help='spatial size')
   parser.add_argument('--valid_spatial_size', type=int, default=64, help='valid spatial size')
@@ -116,7 +116,7 @@ def set_config():
   parser.set_defaults(no_hflip=False)
   parser.add_argument('--norm_value', default=1, type=int,
                       help='If 1, range of inputs is [0-255]. If 255, range of inputs is [0-1].')
-  parser.add_argument('--model', default='resnet', type=str,
+  parser.add_argument('--model', default='resnet', type=str, choices={'mobilenetv2', 'i3d'},
                       help='(resnet | preresnet | wideresnet | resnext | densenet | ')
   parser.add_argument('--version', default=1.1, type=float, help='Version of the model')
   parser.add_argument('--model_depth', default=18, type=int, help='Depth of resnet (10 | 18 | 34 | 50 | 101)')
@@ -132,13 +132,13 @@ def set_config():
 
   # Stereo
   parser.add_argument('--maxdisp', type=int, default=192, help='maxium disparity')
-  parser.add_argument('--stereo_model', default='stackhourglass', help='select model')
   parser.add_argument('--datapath', default='dataset/', help='datapath')
   parser.add_argument('--epochs', type=int, default=10, help='number of epochs to train')
   parser.add_argument('--loadmodel', default=None, help='load model')
   parser.add_argument('--savemodel', default='./', help='save model')
   parser.add_argument('--no-cuda', action='store_true', default=False, help='enables CUDA training')
   parser.add_argument('--seed', type=int, default=1, metavar='S', help='random seed (default: 1)')
+  parser.add_argument('--PSM_mode', type=str, default='max', help='random seed (default: 1)')
 
   args = parser.parse_args()
 
@@ -177,7 +177,7 @@ def set_config():
 
   args.n_class = num_classes[args.dataset]
   args.batch = batch[args.dataset] if args.batch is None else args.batch
-  args.sptial_size = spatial_size[args.dataset] if args.spatial_size is None else args.spatial_size
+  args.spatial_size = spatial_size[args.dataset] if args.spatial_size is None else args.spatial_size
   args.lr = lr[args.dataset] if args.lr is None else args.lr
   args.epoch = epoch[args.dataset] if args.epoch is None else args.epoch
   args.lr_decay = lr_decay[args.dataset] if args.lr_decay is None else args.lr_decay
@@ -188,6 +188,12 @@ def set_config():
   if args.dataset == 'ucf101':
     args.lr_steps = lr_steps[args.model] if args.lr_steps is None else args.lr_steps
     args.sample_size = sample_size_ucf101[args.model] if args.sample_size is None else args.sample_size
+    
+  if args.neuron_sparsity is None:
+    if args.dataset == 'ucf101':
+      args.neuron_sparsity = neuron_sparsity_ucf101[args.model]
+    else:
+      args.neuron_sparsity = neuron_sparsity[args.dataset]
 
   args.dim = args.spatial_size
   assert not (args.enable_train and args.enable_test)
