@@ -138,12 +138,13 @@ def set_config():
   parser.add_argument('--savemodel', default='./', help='save model')
   parser.add_argument('--no-cuda', action='store_true', default=False, help='enables CUDA training')
   parser.add_argument('--seed', type=int, default=1, metavar='S', help='random seed (default: 1)')
-  parser.add_argument('--PSM_mode', type=str, default='max', help='random seed (default: 1)')
+  parser.add_argument('--PSM_mode', type=str, default='min', help='random seed (default: 1)')
 
   args = parser.parse_args()
 
   #
   args.enable_deepmodel_pooling = not args.disable_deepmodel_pooling
+  args.model = 'psm' if args.dataset == 'sceneflow' else args.model
   args.model = args.model.lower()
   args.dataset = args.dataset.lower()
 
@@ -154,9 +155,11 @@ def set_config():
     args.lr = 0.001 if args.lr is None else args.lr
     args.epoch = 200 if args.epoch is None else args.epoch
 
-  args.checkpoint_dir = os.path.join(args.checkpoint_dir,
-                                     '{}_{}'.format(args.dataset, args.model))
-  os.makedirs(args.checkpoint_dir) if not os.path.exists(args.checkpoint_dir) else None
+  if args.dataset != 'sceneflow':  # sceneflow path is from external result_path
+    args.checkpoint_dir = os.path.join(args.checkpoint_dir,
+                                       '{}_{}'.format(args.dataset, args.model))
+    os.makedirs(args.checkpoint_dir) if not os.path.exists(args.checkpoint_dir) else None
+
   args.device = 'cuda' if args.enable_cuda else 'cpu'
 
   # Auto config

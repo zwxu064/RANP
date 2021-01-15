@@ -83,7 +83,7 @@ def test(imgL, imgR, disp_true, model):
   mask = disp_true < 192
 
   with torch.no_grad():
-    output3 = model(imgL, imgR)
+    output3, _ = model(imgL, imgR)
 
   output = torch.squeeze(output3.data.cpu(), 1)[:, 4 :, :]
 
@@ -152,7 +152,7 @@ def main(args):
     if args.weight_init == 'xn':
       file_path = 'data/stereo/stereo_kernel_hidden_prune_grad_{}.npy'.format(grad_mode)
     else:
-      file_path = 'data/stereo/stereo_kernel_hidden_prune_grad_sz{}_dim{}_init{}_{}.npy' \
+      file_path = 'data/stereo/stereo_kernel_hidden_prune_grad_init{}_{}.npy' \
         .format(args.weight_init, grad_mode)
 
     assert (args.batch == 1 if (not os.path.exists(file_path)) else True)
@@ -239,7 +239,10 @@ def main(args):
     print('Epoch %d total training loss = %.3f' %(epoch, total_train_loss / len(TrainImgLoader)))
 
     # SAVE
-    savefilename = args.savemodel + 'checkpoint_' + str(epoch) + '.tar'
+    if not os.path.exists(args.savemodel):
+      os.makedirs(args.savemodel)
+
+    savefilename = os.path.join(args.savemodel, 'checkpoint_' + str(epoch) + '.tar')
     model_state_dict = get_model_state_dict(model)
     torch.save({'epoch': epoch,
                 'model': model_state_dict,
@@ -257,7 +260,7 @@ def main(args):
     total_test_loss += test_loss.item()
 
   print('total test loss = %.3f' %(total_test_loss / len(TestImgLoader)))
-  savefilename = args.savemodel + 'testinformation.tar'
+  savefilename = os.path.join(args.savemodel, 'testinformation.tar')
   torch.save({'test_loss': total_test_loss / len(TestImgLoader)}, savefilename)
 
 

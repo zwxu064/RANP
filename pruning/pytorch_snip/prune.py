@@ -723,9 +723,11 @@ def param_prune_3dunet(grads, param_sparsity, enable_norm=False):
 
   # Last conv all 1 for num of classes
   # if len(param_mask[-1]) == 1:
-  if len(param_mask[-1]) > 0:
-    param_mask[-2] = param_mask[-2].new_ones(param_mask[-2].size())
+  if param_mask[-1] is not None and len(param_mask[-1]) > 0:
     param_mask[-1] = param_mask[-1].new_ones(param_mask[-1].size())
+
+  if param_mask[-2] is not None and len(param_mask[-2]) > 0:
+    param_mask[-2] = param_mask[-2].new_ones(param_mask[-2].size())
 
   n_param_retained = torch.sum(torch.cat([torch.flatten(mask == 1).float() if (mask is not None) else zero_fill for mask in param_mask]))
 
@@ -1245,7 +1247,7 @@ def pruning(file_name,
         elif network_name == 'i3d':
           kernel_mask_clean = remove_redundant_I3D(kernel_mask)
         elif network_name == 'psm':
-          kernel_mask_clean = remove_redundant_PSM(kernel_mask, mode=args.PSM_mode)
+          valid_neuron_list_clean = remove_redundant_PSM(kernel_mask, mode=args.PSM_mode)
         else:
           assert False
     elif args.enable_neuron_prune:

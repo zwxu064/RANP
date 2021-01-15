@@ -14,14 +14,13 @@
 python train_stereo.py \
 --dataset='SceneFlow' \
 --maxdisp 192 \
---model stackhourglass \
 --datapath ./datasets/SceneFlow/ \
 --epochs 15 \
 --savemodel ./trained/ \
 --neuron_sparsity=0.8 \
 --resource_list_type "grad_flops" \
 --batch=12 \
---PSM_mode="max" \
+--PSM_mode="min" \
 # --loadmodel ./trained/checkpoint_6.tar \
 
 # python finetune.py --maxdisp 192 \

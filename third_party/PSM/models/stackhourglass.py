@@ -126,7 +126,6 @@ class PSMNet(nn.Module):
             elif isinstance(m, nn.Linear):
                 m.bias.data.zero_()
 
-
     def forward(self, left, right, edge_weights=None):
         # Zhiwei left: (1,3,256,512)->down to 1/4, refimg_fea: (1,32,64,128)
         refimg_fea, _ = self.feature_extraction(left)

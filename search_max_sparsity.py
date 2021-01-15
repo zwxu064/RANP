@@ -118,7 +118,7 @@ if __name__ == "__main__":
                    width=opt.width,
                    res_type=opt.res_type)
   elif opt.dataset == 'sceneflow':
-    file_path = 'data/stereo/stereo_kernel_hidden_prune_grad_abs.npy'
+    file_path = 'data/stereo/stereo_kernel_hidden_prune_grad_{}.npy'.format(grad_mode)
     model = stackhourglass(opt.maxdisp)
   else:
     file_path = None
