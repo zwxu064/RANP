@@ -53,6 +53,10 @@ def cal_acc(disp_est, disp_gt, accuracies, max_disp=192, mask=None, dataset=None
     # 20190927 one image by one image for average
     for batch_ind in range(batch):
       for disp_ind in range(disp_num):  # left and/or right
+        # TODO
+        if mask[batch_ind, disp_ind].double().sum() == 0:
+          print(batch_ind, disp_ind, disp_gt[batch_ind].unique())
+
         acc = valid_area[batch_ind, disp_ind].double().sum() / mask[batch_ind, disp_ind].double().sum()
         current_accuracies[i] = acc.data.cpu().numpy().item()
         accuracies[i].update(current_accuracies[i])
@@ -170,7 +174,7 @@ def main(args):
   # batch_size=8
   TestImgLoader = torch.utils.data.DataLoader(
     DA.myImageFloder(test_left_img, test_right_img, test_left_disp, False),
-    batch_size=8, shuffle=False, num_workers=8, drop_last=False)
+    batch_size=4, shuffle=False, num_workers=8, drop_last=False)
 
   # Model
   model = stackhourglass(args.maxdisp)
@@ -266,10 +270,11 @@ def main(args):
     model.load_state_dict(state_dict['model'])
     optimizer = load_optimizer_state_dict(state_dict['optimizer'], optimizer, enable_cuda=args.cuda)
 
-  if args.cuda:
-    model.cuda()
-
   if args.enable_train:
+    if args.cuda:
+      model = nn.DataParallel(model)
+      model.cuda()
+
     # Train
     start_full_time = time.time()
     epoch_start = int(args.loadmodel.split('.')[-2].split('_')[-1]) if (args.loadmodel is not None) else 0
@@ -312,8 +317,7 @@ def main(args):
     for batch_idx, (imgL, imgR, disp_L) in enumerate(TestImgLoader):
       test_loss, output3 = test(imgL, imgR, disp_L, model)
       total_test_loss += test_loss.item()
-      occ_mask = disp_L > 192
-      valid_acc, _ = cal_acc(output3[:, 4:], disp_L, valid_acc, mask=occ_mask, max_disp=192, dataset=args.dataset)
+      valid_acc, _ = cal_acc(output3[:, 4:], disp_L, valid_acc, dataset=args.dataset)
       print('Iter %d test loss = %.3f' % (batch_idx, test_loss))
 
     print('Acc1: {:.4f}, acc2: {:.4f}, acc3: {:.4f}, acc5: {:.4f}, epe: {:.4f}; test loss: {:.4f}' \
@@ -332,13 +336,14 @@ def main(args):
     model_paths.sort(key=lambda x: int(x.split('_')[-1].split('.tar')[0]))
 
     for model_path in model_paths:
+      print(model_path)
       assert os.path.exists(model_path)
       current_epoch = int(model_path.split('_')[-1].split('.tar')[0])
+      if current_epoch <= 10: continue
       state_dict = torch.load(model_path, map_location=lambda storage, loc: storage)
       model.load_state_dict(state_dict['model'])
 
       if args.cuda:
-        model = nn.DataParallel(model)
         model.cuda()
 
       total_test_loss = 0
@@ -347,8 +352,7 @@ def main(args):
       for batch_idx, (imgL, imgR, disp_L) in enumerate(TestImgLoader):
         test_loss, output3 = test(imgL, imgR, disp_L, model)
         total_test_loss += test_loss.item()
-        occ_mask = disp_L > 192
-        valid_acc, _ = cal_acc(output3[:, 4:], disp_L, valid_acc, mask=occ_mask, max_disp=192, dataset=args.dataset)
+        valid_acc, _ = cal_acc(output3[:, 4:], disp_L, valid_acc, dataset=args.dataset)
         print('Iter %d test loss = %.3f' % (batch_idx, test_loss))
 
       print('Epoch: {}, acc1: {:.4f}, acc2: {:.4f}, acc3: {:.4f}, acc5: {:.4f}, epe: {:.4f}; test loss: {:.4f}' \
