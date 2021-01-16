@@ -1,4 +1,4 @@
-import os, random, torch, time, math, copy
+import os, random, torch, time, math, copy, glob
 import torch.nn as nn
 import torch.backends.cudnn as cudnn
 import torch.optim as optim
@@ -10,7 +10,62 @@ from configs import set_config
 from third_party.thop.thop.profile import profile
 from pruning.pytorch_snip.prune import pruning, do_statistics_model, dump_neuron_per_layer
 from pruning_related import refine_model_PSM
-from aux.utils import weight_init
+from aux.utils import weight_init, AverageMeter
+
+
+def cal_acc(disp_est, disp_gt, accuracies, max_disp=192, mask=None, dataset=None):
+  if dataset.find('KITTI') > -1:
+    if mask is None:
+      mask = (disp_gt > 0).float()
+    else:
+      mask = ((disp_gt > 0) & (mask == 1)).float()
+  else:
+    if mask is None:
+      mask = ((disp_gt >= 0) & (disp_gt < max_disp)).float()
+    else:
+      mask = ((disp_gt >= 0) & (disp_gt < max_disp) & (mask == 1)).float()
+
+  threshold_vector = [1., 2., 3., 5.]
+  diff = torch.abs(disp_est.cpu() - disp_gt.cpu())
+
+  if dataset in ['KITTI2015', 'KITTI-single']:
+    per_threshold = 0.05
+  else:
+    per_threshold = 1.0
+
+  assert (len(threshold_vector) + 1 == len(accuracies))
+  current_accuracies = [-1, -1, -1, -1, -1]
+  disp_est_size = disp_est.size()
+  batch = disp_est_size[0]
+
+  if len(disp_est_size) == 3:
+    disp_gt = disp_gt.unsqueeze(1)
+    mask = mask.unsqueeze(1)
+    diff = diff.unsqueeze(1)
+    disp_num = 1
+  else:
+    disp_num = disp_est.size(1)
+
+  # ==== Accuracies
+  for i in range(len(accuracies) - 1):
+    valid_area = ((diff <= threshold_vector[i]) & (diff <= (per_threshold * disp_gt))).float() * mask
+
+    # 20190927 one image by one image for average
+    for batch_ind in range(batch):
+      for disp_ind in range(disp_num):  # left and/or right
+        acc = valid_area[batch_ind, disp_ind].double().sum() / mask[batch_ind, disp_ind].double().sum()
+        current_accuracies[i] = acc.data.cpu().numpy().item()
+        accuracies[i].update(current_accuracies[i])
+
+  # ==== EPE
+  for batch_ind in range(batch):
+    for disp_ind in range(disp_num):  # left and/or right
+      epe = (diff[batch_ind, disp_ind] * mask[batch_ind, disp_ind]).double().sum() / \
+            mask[batch_ind, disp_ind].double().sum()
+      current_accuracies[4] = epe.data.cpu().numpy().item()
+      accuracies[4].update(current_accuracies[4])
+
+  return accuracies, current_accuracies
 
 
 def display_model_structure(model):
@@ -18,7 +73,6 @@ def display_model_structure(model):
   for key, layer in model.named_modules():
     if isinstance(layer, (nn.Linear, nn.Conv2d, nn.Conv3d,
                           nn.ConvTranspose2d, nn.ConvTranspose3d)):
-      print(idx, key, layer.weight.shape)
       idx += 1
 
 
@@ -92,7 +146,7 @@ def test(imgL, imgR, disp_true, model):
   else:
     loss = torch.mean(torch.abs(output[mask]-disp_true[mask]))  # end-point-error
 
-  return loss
+  return loss, output3
 
 
 # def adjust_learning_rate(optimizer, epoch):
@@ -207,61 +261,99 @@ def main(args):
   print('Number of model parameters: {}'.format(sum([p.data.nelement() for p in model.parameters()])))
 
   # Resume
-  if args.loadmodel is not None:
+  if args.loadmodel is not None and os.path.isfile(args.loadmodel):
     state_dict = torch.load(args.loadmodel, map_location=lambda storage, loc: storage)
     model.load_state_dict(state_dict['model'])
     optimizer = load_optimizer_state_dict(state_dict['optimizer'], optimizer, enable_cuda=args.cuda)
 
   if args.cuda:
-    model = nn.DataParallel(model)
     model.cuda()
 
-  # Train
-  start_full_time = time.time()
-  epoch_start = int(args.loadmodel.split('.')[-2].split('_')[-1]) if (args.loadmodel is not None) else 0
+  if args.enable_train:
+    # Train
+    start_full_time = time.time()
+    epoch_start = int(args.loadmodel.split('.')[-2].split('_')[-1]) if (args.loadmodel is not None) else 0
 
-  for epoch in range(epoch_start + 1, args.epochs + 1):
-    print('This is %d-th epoch' % (epoch))
-    torch.manual_seed(epoch)
+    for epoch in range(epoch_start + 1, args.epochs + 1):
+      print('This is %d-th epoch' % (epoch))
+      torch.manual_seed(epoch)
 
-    if args.cuda:
-      torch.cuda.manual_seed(epoch)
+      if args.cuda:
+        torch.cuda.manual_seed(epoch)
 
-    total_train_loss = 0
-    # adjust_learning_rate(optimizer, epoch)
+      total_train_loss = 0
+      # adjust_learning_rate(optimizer, epoch)
 
-    for batch_idx, (imgL_crop, imgR_crop, disp_crop_L) in enumerate(TrainImgLoader):
-      start_time = time.time()
-      loss = train(imgL_crop, imgR_crop, disp_crop_L, model, optimizer)
-      print('Iter %d training loss = %.3f , time = %.2f' % (batch_idx, loss, time.time() - start_time))
-      total_train_loss += loss.item()
+      for batch_idx, (imgL_crop, imgR_crop, disp_crop_L) in enumerate(TrainImgLoader):
+        start_time = time.time()
+        loss = train(imgL_crop, imgR_crop, disp_crop_L, model, optimizer)
+        print('Iter %d training loss = %.3f , time = %.2f' % (batch_idx, loss, time.time() - start_time))
+        total_train_loss += loss.item()
 
-    print('Epoch %d total training loss = %.3f' %(epoch, total_train_loss / len(TrainImgLoader)))
+      print('Epoch %d total training loss = %.3f' %(epoch, total_train_loss / len(TrainImgLoader)))
 
-    # SAVE
-    if not os.path.exists(args.savemodel):
-      os.makedirs(args.savemodel)
+      # SAVE
+      if not os.path.exists(args.savemodel):
+        os.makedirs(args.savemodel)
 
-    savefilename = os.path.join(args.savemodel, 'checkpoint_' + str(epoch) + '.tar')
-    model_state_dict = get_model_state_dict(model)
-    torch.save({'epoch': epoch,
-                'model': model_state_dict,
-                'train_loss': total_train_loss / len(TrainImgLoader),
-                'optimizer': optimizer.state_dict()}, savefilename)
+      savefilename = os.path.join(args.savemodel, 'checkpoint_' + str(epoch) + '.tar')
+      model_state_dict = get_model_state_dict(model)
+      torch.save({'epoch': epoch,
+                  'model': model_state_dict,
+                  'train_loss': total_train_loss / len(TrainImgLoader),
+                  'optimizer': optimizer.state_dict()}, savefilename)
 
-  print('Full training time = %.2f HR' %((time.time() - start_full_time)/3600))
+    print('Full training time = %.2f HR' %((time.time() - start_full_time)/3600))
 
-  # Valid
-  total_test_loss = 0
+    # Valid
+    total_test_loss = 0
+    valid_acc = [AverageMeter(), AverageMeter(), AverageMeter(), AverageMeter(), AverageMeter()]
 
-  for batch_idx, (imgL, imgR, disp_L) in enumerate(TestImgLoader):
-    test_loss = test(imgL, imgR, disp_L, model)
-    print('Iter %d test loss = %.3f' % (batch_idx, test_loss))
-    total_test_loss += test_loss.item()
+    for batch_idx, (imgL, imgR, disp_L) in enumerate(TestImgLoader):
+      test_loss, output3 = test(imgL, imgR, disp_L, model)
+      total_test_loss += test_loss.item()
+      occ_mask = disp_L > 192
+      valid_acc, _ = cal_acc(output3[:, 4:], disp_L, valid_acc, mask=occ_mask, max_disp=192, dataset=args.dataset)
+      print('Iter %d test loss = %.3f' % (batch_idx, test_loss))
 
-  print('total test loss = %.3f' %(total_test_loss / len(TestImgLoader)))
-  savefilename = os.path.join(args.savemodel, 'testinformation.tar')
-  torch.save({'test_loss': total_test_loss / len(TestImgLoader)}, savefilename)
+    print('Acc1: {:.4f}, acc2: {:.4f}, acc3: {:.4f}, acc5: {:.4f}, epe: {:.4f}; test loss: {:.4f}' \
+          .format(valid_acc[0].avg, valid_acc[1].avg, valid_acc[2].avg, valid_acc[3].avg,
+                  valid_acc[4].avg, total_test_loss / len(TestImgLoader)))
+    # savefilename = os.path.join(args.savemodel, 'testinformation.tar')
+    # torch.save({'test_loss': total_test_loss / len(TestImgLoader)}, savefilename)
+  elif args.enable_test:
+    if os.path.isdir(args.loadmodel):
+      model_paths = glob.glob('{}/checkpoint_*.tar'.format(args.loadmodel))
+    elif os.path.isfile(args.loadmodel):
+      model_paths = [args.loadmodel]
+    else:
+      model_paths = []
+
+    model_paths.sort(key=lambda x: int(x.split('_')[-1].split('.tar')[0]))
+
+    for model_path in model_paths:
+      assert os.path.exists(model_path)
+      current_epoch = int(model_path.split('_')[-1].split('.tar')[0])
+      state_dict = torch.load(model_path, map_location=lambda storage, loc: storage)
+      model.load_state_dict(state_dict['model'])
+
+      if args.cuda:
+        model = nn.DataParallel(model)
+        model.cuda()
+
+      total_test_loss = 0
+      valid_acc = [AverageMeter(), AverageMeter(), AverageMeter(), AverageMeter(), AverageMeter()]
+
+      for batch_idx, (imgL, imgR, disp_L) in enumerate(TestImgLoader):
+        test_loss, output3 = test(imgL, imgR, disp_L, model)
+        total_test_loss += test_loss.item()
+        occ_mask = disp_L > 192
+        valid_acc, _ = cal_acc(output3[:, 4:], disp_L, valid_acc, mask=occ_mask, max_disp=192, dataset=args.dataset)
+        print('Iter %d test loss = %.3f' % (batch_idx, test_loss))
+
+      print('Epoch: {}, acc1: {:.4f}, acc2: {:.4f}, acc3: {:.4f}, acc5: {:.4f}, epe: {:.4f}; test loss: {:.4f}' \
+            .format(current_epoch, valid_acc[0].avg, valid_acc[1].avg, valid_acc[2].avg, valid_acc[3].avg,
+                    valid_acc[4].avg, total_test_loss / len(TestImgLoader)))
 
 
 if __name__ == '__main__':
