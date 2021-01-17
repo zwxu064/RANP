@@ -3,6 +3,7 @@ import torch.nn as nn
 import torch.backends.cudnn as cudnn
 import torch.optim as optim
 import torch.utils.data, torch.nn.parallel
+import matplotlib.pyplot as plt
 from third_party.PSM.dataloader import listflowfile as lt
 from third_party.PSM.dataloader import SecenFlowLoader as DA
 from third_party.PSM.models import *
@@ -53,19 +54,20 @@ def cal_acc(disp_est, disp_gt, accuracies, max_disp=192, mask=None, dataset=None
     # 20190927 one image by one image for average
     for batch_ind in range(batch):
       for disp_ind in range(disp_num):  # left and/or right
-        # TODO
-        if mask[batch_ind, disp_ind].double().sum() == 0:
-          print(batch_ind, disp_ind, disp_gt[batch_ind].unique())
-
-        acc = valid_area[batch_ind, disp_ind].double().sum() / mask[batch_ind, disp_ind].double().sum()
+        valid_area_sum = valid_area[batch_ind, disp_ind].double().sum()
+        mask_area_sum = mask[batch_ind, disp_ind].double().sum()
+        if mask_area_sum == 0: continue  # Exclude special cases
+        acc = valid_area_sum / mask_area_sum
         current_accuracies[i] = acc.data.cpu().numpy().item()
         accuracies[i].update(current_accuracies[i])
 
   # ==== EPE
   for batch_ind in range(batch):
     for disp_ind in range(disp_num):  # left and/or right
-      epe = (diff[batch_ind, disp_ind] * mask[batch_ind, disp_ind]).double().sum() / \
-            mask[batch_ind, disp_ind].double().sum()
+      diff_area_sum = (diff[batch_ind, disp_ind] * mask[batch_ind, disp_ind]).double().sum()
+      mask_area_sum = mask[batch_ind, disp_ind].double().sum()
+      if mask_area_sum == 0: continue  # Exclude special cases
+      epe = diff_area_sum / mask_area_sum
       current_accuracies[4] = epe.data.cpu().numpy().item()
       accuracies[4].update(current_accuracies[4])
 
