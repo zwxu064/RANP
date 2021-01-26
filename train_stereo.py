@@ -14,6 +14,21 @@ from pruning_related import refine_model_PSM
 from aux.utils import weight_init, AverageMeter
 
 
+def check_neuron_ratio(model):
+  num_layer_2D, num_layer_3D = 0, 0
+  num_neuron_2D, num_neuron_3D = 0, 0
+  for key, layer in model.named_modules():
+    if isinstance(layer, (nn.Linear, nn.Conv2d, nn.ConvTranspose2d)):
+      num_layer_2D += 1
+      num_neuron_2D += layer.weight.out_channels
+
+    if isinstance(layer, (nn.Conv3d, nn.ConvTranspose3d)):
+      num_layer_3D += 1
+      num_neuron_3D += layer.weight.out_channels
+
+  return num_layer_2D, num_layer_3D, num_neuron_2D, num_neuron_3D
+
+
 def cal_acc(disp_est, disp_gt, accuracies, max_disp=192, mask=None, dataset=None, batch_idx=-1, names=None):
   if dataset.find('KITTI') > -1:
     if mask is None:
@@ -97,14 +112,6 @@ def cal_acc(disp_est, disp_gt, accuracies, max_disp=192, mask=None, dataset=None
         plt.close()
 
   return accuracies, current_accuracies
-
-
-def display_model_structure(model):
-  idx = 0
-  for key, layer in model.named_modules():
-    if isinstance(layer, (nn.Linear, nn.Conv2d, nn.Conv3d,
-                          nn.ConvTranspose2d, nn.ConvTranspose3d)):
-      idx += 1
 
 
 def get_model_state_dict(model):
@@ -210,12 +217,12 @@ def main(args):
   # batch_size=12
   TrainImgLoader = torch.utils.data.DataLoader(
     DA.myImageFloder(all_left_img, all_right_img, all_left_disp, True),
-    batch_size=12, shuffle=True, num_workers=args.batch * 2 * 0, drop_last=False)
+    batch_size=12, shuffle=True, num_workers=args.batch * 2, drop_last=False)
 
   # batch_size=8
   TestImgLoader = torch.utils.data.DataLoader(
     DA.myImageFloder(test_left_img, test_right_img, test_left_disp, False),
-    batch_size=8, shuffle=False, num_workers=8 * 0, drop_last=False)
+    batch_size=4, shuffle=False, num_workers=8, drop_last=False)
 
   # Model
   model = stackhourglass(args.maxdisp)
@@ -235,8 +242,6 @@ def main(args):
             inputs=(profile_input_L, profile_input_R),
             verbose=False,
             resource_list_type=args.resource_list_type)
-
-  # display_model_structure(model_full)
 
   del model_full
   print('Full model, flops: {:.4f}G, params: {:.4f}MB, memory: {:.4f}MB' \
@@ -303,6 +308,9 @@ def main(args):
   # =========================================================
 
   # print(model)
+  num_layer_2D, num_layer_3D, num_neuron_2D, num_neuron_3D = check_neuron_ratio(model)
+  print(num_layer_2D, num_layer_3D, num_neuron_2D, num_neuron_3D)
+
   print(args)
   print('Number of model parameters: {}'.format(sum([p.data.nelement() for p in model.parameters()])))
 
