@@ -2,16 +2,17 @@
 
 # Config
 dataset="sceneflow"
-enable_debug=true
-enable_run_script=true
+enable_debug=false
+enable_run_script=false
 resource_list_type="grad_flops"
 resource_list_lambda=0
-sparsity=0.7  # max: 0.90014
-mode="min"
+sparsity=0.462  # max: 0.90014
+mode="max"
 acc_mode="sum"
 prune_mode="neuron"
-cnn_mode="test"
-enable_raw_grad=false
+cnn_mode="train"
+enable_raw_grad=true
+weight_init="xn"
 
 if [ ${cnn_mode} == "train" ]; then
     cluster_time=72
@@ -24,7 +25,7 @@ if [ ${prune_mode} != "neuron" ]; then
     resource_list_lambda=0
     num_gpus=3
 else
-    if [ `echo "${sparsity} > 0.5"|bc` -eq 1 ]; then
+    if [ `echo "${sparsity} > 0.7"|bc` -eq 1 ]; then
         num_gpus=2
     else
         num_gpus=3
@@ -42,6 +43,11 @@ loadmodel="checkpoints/stereo/${dataset}_${prune_mode}_train_${resource_list_typ
 if ${enable_raw_grad}; then
     common+="_rawgrad"
     loadmodel+="_rawgrad"
+fi
+
+if [ ${weight_init} == "ort" ]; then
+    common+="_ort"
+    loadmodel+="_ort"
 fi
 
 bash_name="scripts/stereo/${common}.sh"
@@ -80,6 +86,7 @@ python train_stereo.py \\
 --datapath=\"./datasets/SceneFlow/\" \\
 --epochs=15 \\
 --acc_mode=\"${acc_mode}\" \\
+--valid_min_epoch=11 \\
 --PSM_mode=\"${mode}\" \\" >> ${bash_name}
 
 if [ ${prune_mode} == "neuron" ]; then
@@ -107,6 +114,10 @@ fi
 
 if ${enable_raw_grad}; then
     echo -e "--enable_raw_grad \\" >> ${bash_name}
+fi
+
+if [ ${weight_init} == "ort" ]; then
+    echo -e "--weight_init=\"ort\" \\" >> ${bash_name}
 fi
 
 eval "chmod 755 ${bash_name}"

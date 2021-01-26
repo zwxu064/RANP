@@ -39,14 +39,12 @@ class myImageFloder(data.Dataset):
         left  = self.left[index]
         right = self.right[index]
         disp_L= self.disp_L[index]
-
+		name = left
 
         left_img = self.loader(left)
         right_img = self.loader(right)
         dataL, scaleL = self.dploader(disp_L)
         dataL = np.ascontiguousarray(dataL,dtype=np.float32)
-
-
 
         if self.training:  
            w, h = left_img.size
@@ -63,7 +61,7 @@ class myImageFloder(data.Dataset):
            left_img   = processed(left_img)
            right_img  = processed(right_img)
 
-           return left_img, right_img, dataL
+           return left_img, right_img, dataL, name
         else:
            w, h = left_img.size
            left_img = left_img.crop((w-960, h-544, w, h))
@@ -72,7 +70,7 @@ class myImageFloder(data.Dataset):
            left_img       = processed(left_img)
            right_img      = processed(right_img)
 
-           return left_img, right_img, dataL
+           return left_img, right_img, dataL, name
 
     def __len__(self):
         return len(self.left)

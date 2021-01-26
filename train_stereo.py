@@ -14,7 +14,7 @@ from pruning_related import refine_model_PSM
 from aux.utils import weight_init, AverageMeter
 
 
-def cal_acc(disp_est, disp_gt, accuracies, max_disp=192, mask=None, dataset=None):
+def cal_acc(disp_est, disp_gt, accuracies, max_disp=192, mask=None, dataset=None, batch_idx=-1, names=None):
   if dataset.find('KITTI') > -1:
     if mask is None:
       mask = (disp_gt > 0).float()
@@ -63,13 +63,38 @@ def cal_acc(disp_est, disp_gt, accuracies, max_disp=192, mask=None, dataset=None
 
   # ==== EPE
   for batch_ind in range(batch):
+    tmp_epe = 0
     for disp_ind in range(disp_num):  # left and/or right
       diff_area_sum = (diff[batch_ind, disp_ind] * mask[batch_ind, disp_ind]).double().sum()
       mask_area_sum = mask[batch_ind, disp_ind].double().sum()
       if mask_area_sum == 0: continue  # Exclude special cases
       epe = diff_area_sum / mask_area_sum
       current_accuracies[4] = epe.data.cpu().numpy().item()
+      tmp_epe += current_accuracies[4]
       accuracies[4].update(current_accuracies[4])
+
+    if False:
+      print(batch_idx, batch_ind, tmp_epe)
+      if (batch_idx == 1 and batch_ind == 0) \
+        or (batch_idx == 2 and batch_ind == 1) \
+        or (batch_idx == 8 and batch_ind ==1) \
+        or (batch_idx == 12 and batch_ind == 0) \
+        or (batch_idx == 14 and batch_ind == 0) \
+        or (batch_idx == 15 and batch_ind == 1):
+        print(names[batch_ind])
+        plt.figure()
+        plt.imshow((disp_est[batch_ind].squeeze().cpu().numpy() * mask[batch_ind].squeeze().cpu().numpy()))
+        plt.axis('off')
+        plt.savefig('viz_figures/sceneflow/batch{}_id{}_pred.jpg'.format(batch_idx, batch_ind), format='jpg',
+                    bbox_inches='tight')
+        plt.close()
+
+        plt.figure()
+        plt.imshow((disp_gt[batch_ind].squeeze().cpu().numpy() * mask[batch_ind].squeeze().cpu().numpy()))
+        plt.axis('off')
+        plt.savefig('viz_figures/sceneflow/batch{}_id{}_gt.jpg'.format(batch_idx, batch_ind), format='jpg',
+                    bbox_inches='tight')
+        plt.close()
 
   return accuracies, current_accuracies
 
@@ -147,20 +172,34 @@ def test(imgL, imgR, disp_true, model):
 
   output = torch.squeeze(output3.data.cpu(), 1)[:, 4 :, :]
 
-  if len(disp_true[mask])==0:
+  if len(disp_true[mask]) == 0:
     loss = 0
   else:
-    loss = torch.mean(torch.abs(output[mask]-disp_true[mask]))  # end-point-error
+    loss = torch.mean(torch.abs(output[mask] - disp_true[mask]))  # end-point-error
 
   return loss, output3
 
 
-# def adjust_learning_rate(optimizer, epoch):
-#   lr = 0.001
-#   print(lr)
-#
-#   for param_group in optimizer.param_groups:
-#     param_group['lr'] = lr
+def validate(TestImgLoader, model):
+  test_len = len(TestImgLoader)
+  total_test_loss = 0
+  valid_acc = [AverageMeter(), AverageMeter(), AverageMeter(), AverageMeter(), AverageMeter()]
+
+  for batch_idx, (imgL, imgR, disp_L, names) in enumerate(TestImgLoader):
+    test_loss, output3 = test(imgL, imgR, disp_L, model)
+    total_test_loss += test_loss.item()
+    valid_acc, _ = cal_acc(output3[:, 4:], disp_L, valid_acc, dataset=args.dataset, batch_idx=batch_idx, names=names)
+    print('Iter %d/%d test loss = %.3f' % (batch_idx, test_len, test_loss))
+
+  return valid_acc, total_test_loss
+
+
+def adjust_learning_rate(optimizer, epoch):
+  lr = 0.001
+  print(lr)
+
+  for param_group in optimizer.param_groups:
+    param_group['lr'] = lr
 
 
 def main(args):
@@ -171,12 +210,12 @@ def main(args):
   # batch_size=12
   TrainImgLoader = torch.utils.data.DataLoader(
     DA.myImageFloder(all_left_img, all_right_img, all_left_disp, True),
-    batch_size=args.batch, shuffle=True, num_workers=args.batch * 2, drop_last=False)
+    batch_size=12, shuffle=True, num_workers=args.batch * 2 * 0, drop_last=False)
 
   # batch_size=8
   TestImgLoader = torch.utils.data.DataLoader(
     DA.myImageFloder(test_left_img, test_right_img, test_left_disp, False),
-    batch_size=4, shuffle=False, num_workers=8, drop_last=False)
+    batch_size=8, shuffle=False, num_workers=8 * 0, drop_last=False)
 
   # Model
   model = stackhourglass(args.maxdisp)
@@ -264,6 +303,7 @@ def main(args):
   # =========================================================
 
   # print(model)
+  print(args)
   print('Number of model parameters: {}'.format(sum([p.data.nelement() for p in model.parameters()])))
 
   # Resume
@@ -278,11 +318,13 @@ def main(args):
       model.cuda()
 
     # Train
-    start_full_time = time.time()
+    train_duration = 0
     epoch_start = int(args.loadmodel.split('.')[-2].split('_')[-1]) if (args.loadmodel is not None) else 0
+    train_len = len(TrainImgLoader)
 
     for epoch in range(epoch_start + 1, args.epochs + 1):
       print('This is %d-th epoch' % (epoch))
+      start_full_time = time.time()
       torch.manual_seed(epoch)
 
       if args.cuda:
@@ -291,12 +333,14 @@ def main(args):
       total_train_loss = 0
       # adjust_learning_rate(optimizer, epoch)
 
-      for batch_idx, (imgL_crop, imgR_crop, disp_crop_L) in enumerate(TrainImgLoader):
+      for batch_idx, (imgL_crop, imgR_crop, disp_crop_L, _) in enumerate(TrainImgLoader):
         start_time = time.time()
         loss = train(imgL_crop, imgR_crop, disp_crop_L, model, optimizer)
-        print('Iter %d training loss = %.3f , time = %.2f' % (batch_idx, loss, time.time() - start_time))
+        print('Iter %d/%d training loss = %.3f , time = %.2f' \
+              % (batch_idx, train_len, loss, time.time() - start_time))
         total_train_loss += loss.item()
 
+      train_duration += time.time() - start_full_time
       print('Epoch %d total training loss = %.3f' %(epoch, total_train_loss / len(TrainImgLoader)))
 
       # SAVE
@@ -310,23 +354,14 @@ def main(args):
                   'train_loss': total_train_loss / len(TrainImgLoader),
                   'optimizer': optimizer.state_dict()}, savefilename)
 
-    print('Full training time = %.2f HR' %((time.time() - start_full_time)/3600))
+      # Valid
+      if epoch >= args.valid_min_epoch:
+        valid_acc, total_test_loss = validate(TestImgLoader, model)
+        print('Epoch: {}, acc1: {:.4f}, acc2: {:.4f}, acc3: {:.4f}, acc5: {:.4f}, epe: {:.4f}; test loss: {:.4f}' \
+              .format(epoch, valid_acc[0].avg, valid_acc[1].avg, valid_acc[2].avg, valid_acc[3].avg,
+                      valid_acc[4].avg, total_test_loss / len(TestImgLoader)))
 
-    # Valid
-    total_test_loss = 0
-    valid_acc = [AverageMeter(), AverageMeter(), AverageMeter(), AverageMeter(), AverageMeter()]
-
-    for batch_idx, (imgL, imgR, disp_L) in enumerate(TestImgLoader):
-      test_loss, output3 = test(imgL, imgR, disp_L, model)
-      total_test_loss += test_loss.item()
-      valid_acc, _ = cal_acc(output3[:, 4:], disp_L, valid_acc, dataset=args.dataset)
-      print('Iter %d test loss = %.3f' % (batch_idx, test_loss))
-
-    print('Acc1: {:.4f}, acc2: {:.4f}, acc3: {:.4f}, acc5: {:.4f}, epe: {:.4f}; test loss: {:.4f}' \
-          .format(valid_acc[0].avg, valid_acc[1].avg, valid_acc[2].avg, valid_acc[3].avg,
-                  valid_acc[4].avg, total_test_loss / len(TestImgLoader)))
-    # savefilename = os.path.join(args.savemodel, 'testinformation.tar')
-    # torch.save({'test_loss': total_test_loss / len(TestImgLoader)}, savefilename)
+    print('Full training time = %.2f HR' %(train_duration / 3600))
   elif args.enable_test:
     if os.path.isdir(args.loadmodel):
       model_paths = glob.glob('{}/checkpoint_*.tar'.format(args.loadmodel))
@@ -336,6 +371,7 @@ def main(args):
       model_paths = []
 
     model_paths.sort(key=lambda x: int(x.split('_')[-1].split('.tar')[0]))
+    # print(model_paths)
 
     for model_path in model_paths:
       print(model_path)
@@ -344,19 +380,8 @@ def main(args):
       if current_epoch <= 10: continue
       state_dict = torch.load(model_path, map_location=lambda storage, loc: storage)
       model.load_state_dict(state_dict['model'])
-
-      if args.cuda:
-        model.cuda()
-
-      total_test_loss = 0
-      valid_acc = [AverageMeter(), AverageMeter(), AverageMeter(), AverageMeter(), AverageMeter()]
-
-      for batch_idx, (imgL, imgR, disp_L) in enumerate(TestImgLoader):
-        test_loss, output3 = test(imgL, imgR, disp_L, model)
-        total_test_loss += test_loss.item()
-        valid_acc, _ = cal_acc(output3[:, 4:], disp_L, valid_acc, dataset=args.dataset)
-        print('Iter %d test loss = %.3f' % (batch_idx, test_loss))
-
+      model.cuda() if args.cuda else None
+      valid_acc, total_test_loss = validate(TestImgLoader, model)
       print('Epoch: {}, acc1: {:.4f}, acc2: {:.4f}, acc3: {:.4f}, acc5: {:.4f}, epe: {:.4f}; test loss: {:.4f}' \
             .format(current_epoch, valid_acc[0].avg, valid_acc[1].avg, valid_acc[2].avg, valid_acc[3].avg,
                     valid_acc[4].avg, total_test_loss / len(TestImgLoader)))
