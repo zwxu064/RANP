@@ -20,11 +20,11 @@ def check_neuron_ratio(model):
   for key, layer in model.named_modules():
     if isinstance(layer, (nn.Linear, nn.Conv2d, nn.ConvTranspose2d)):
       num_layer_2D += 1
-      num_neuron_2D += layer.weight.out_channels
+      num_neuron_2D += layer.out_channels
 
     if isinstance(layer, (nn.Conv3d, nn.ConvTranspose3d)):
       num_layer_3D += 1
-      num_neuron_3D += layer.weight.out_channels
+      num_neuron_3D += layer.out_channels
 
   return num_layer_2D, num_layer_3D, num_neuron_2D, num_neuron_3D
 
@@ -308,8 +308,10 @@ def main(args):
   # =========================================================
 
   # print(model)
-  num_layer_2D, num_layer_3D, num_neuron_2D, num_neuron_3D = check_neuron_ratio(model)
-  print(num_layer_2D, num_layer_3D, num_neuron_2D, num_neuron_3D)
+  if False:
+    num_layer_2D, num_layer_3D, num_neuron_2D, num_neuron_3D = check_neuron_ratio(model)
+    print('Num layer 2D/3D:', num_layer_2D, num_layer_3D,
+          ', num neuron 2D/3D:', num_neuron_2D, num_neuron_3D)
 
   print(args)
   print('Number of model parameters: {}'.format(sum([p.data.nelement() for p in model.parameters()])))

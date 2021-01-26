@@ -17,11 +17,14 @@ python train_stereo.py \
 --datapath ./datasets/SceneFlow/ \
 --epochs 15 \
 --savemodel ./trained/ \
---neuron_sparsity=0.8 \
+--neuron_sparsity=0.462 \
 --resource_list_type "grad_flops" \
+--resource_list_lambda=100 \
 --batch=12 \
---PSM_mode="min" \
-# --loadmodel ./trained/checkpoint_6.tar \
+--PSM_mode="max" \
+--acc_mode="sum" \
+--enable_raw_grad \
+# --loadmodel ./ trained/checkpoint_6.tar \
 
 # python finetune.py --maxdisp 192 \
 #                    --model stackhourglass \

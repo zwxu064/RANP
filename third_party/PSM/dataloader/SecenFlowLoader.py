@@ -39,7 +39,7 @@ class myImageFloder(data.Dataset):
         left  = self.left[index]
         right = self.right[index]
         disp_L= self.disp_L[index]
-		name = left
+        name = left
 
         left_img = self.loader(left)
         right_img = self.loader(right)
