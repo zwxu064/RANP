@@ -139,6 +139,7 @@ def set_config():
   parser.add_argument('--no-cuda', action='store_true', default=False, help='enables CUDA training')
   parser.add_argument('--seed', type=int, default=1, metavar='S', help='random seed (default: 1)')
   parser.add_argument('--PSM_mode', type=str, default='min', help='random seed (default: 1)')
+  parser.add_argument('--statistic_mode', type=str, default='all', choices={'2d', '3d', 'all'})
 
   args = parser.parse_args()
 
@@ -147,6 +148,7 @@ def set_config():
   args.model = 'psm' if args.dataset == 'sceneflow' else args.model
   args.model = args.model.lower()
   args.dataset = args.dataset.lower()
+  args.statistic_mode = 'all' if (args.model != 'psm') else args.statistic_mode
 
   if args.dataset.find('shapenet') > -1:
     args.lr = 0.1 if args.lr is None else args.lr

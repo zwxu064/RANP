@@ -59,7 +59,9 @@ def profile(model,
             custom_ops=None,
             verbose=True,
             enable_layer_neuron_display=False,
-            resource_list_type=None):
+            resource_list_type=None,
+            mode='all'):  # mode: all/2d/3d
+    mode = mode.lower()
     handler_collection = []
     if custom_ops is None:
         custom_ops = {}
@@ -127,9 +129,23 @@ def profile(model,
         memory_layer = m.total_memory.double()
         output_size_layer = m.output_size
 
-        total_ops += opt_layer
-        total_params += param_layer
-        total_memory += memory_layer
+        if mode == '2d' and isinstance(m, (nn.Conv2d, nn.ConvTranspose2d, nn.Linear, nn.ConvTranspose1d,
+                                           nn.BatchNorm2d, nn.BatchNorm1d, nn.AvgPool2d, nn.AvgPool1d,
+                                           nn.AdaptiveAvgPool1d, nn.AdaptiveAvgPool2d, nn.MaxPool1d,
+                                           nn.MaxPool2d)):
+            total_ops += opt_layer
+            total_params += param_layer
+            total_memory += memory_layer
+        elif mode == '3d' and isinstance(m, (nn.Conv3d, nn.ConvTranspose3d, nn.BatchNorm3d, nn.AvgPool3d,
+                                             nn.AdaptiveAvgPool3d, nn.MaxPool3d)):
+            total_ops += opt_layer
+            total_params += param_layer
+            total_memory += memory_layer
+        # elif mode == 'common' and isinstance(m, (nn.ReLU, nn.LeakyReLU)):
+        elif mode == 'all':
+            total_ops += opt_layer
+            total_params += param_layer
+            total_memory += memory_layer
 
         if enable_resource_list and isinstance(m, (nn.Conv3d, nn.Conv2d, nn.Conv3d, nn.ConvTranspose2d,
                                                    nn.ConvTranspose3d, nn.ConvTranspose1d, nn.Linear)):

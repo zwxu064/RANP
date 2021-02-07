@@ -241,7 +241,8 @@ def main(args):
     profile(model_full.cuda(),
             inputs=(profile_input_L, profile_input_R),
             verbose=False,
-            resource_list_type=args.resource_list_type)
+            resource_list_type=args.resource_list_type,
+            mode=args.statistic_mode)
 
   del model_full
   print('Full model, flops: {:.4f}G, params: {:.4f}MB, memory: {:.4f}MB' \
@@ -298,7 +299,8 @@ def main(args):
       flops, params, memory, _ = profile(model_flops.cuda(),
                                          inputs=(profile_input_L, profile_input_R),
                                          verbose=False,
-                                         resource_list_type=args.resource_list_type)
+                                         resource_list_type=args.resource_list_type,
+                                         mode=args.statistic_mode)
       print('New model, flops: {:.4f}G, params: {:.4f}MB, memory: {:.4f}MB' \
             .format(flops / 1e9, params * 4 / (1024 ** 2), memory * 4 / (1024 ** 2)))
       del model_flops, profile_input_L, profile_input_R
