@@ -63,8 +63,13 @@ if __name__ == "__main__":
       file_path = 'data/ucf101/ucf101_{}_sz{}_{}_{}.npy'.format(
         opt.network_name, opt.prune_spatial_size, opt.weight_init, grad_mode)
     elif opt.network_name == 'i3d':
-      file_path = 'data/ucf101/ucf101_{}_sz{}_{}_{}.npy'.format(
-        opt.network_name, opt.prune_spatial_size, opt.weight_init, grad_mode)
+      if os.path.exists(opt.pretrain_path):
+        pretrain_name = opt.pretrain_path.split('/')[-1].split('.')[0]
+        file_path = 'data/ucf101/ucf101_{}_sz{}_{}_{}_{}.npy'.format(
+          opt.network_name, opt.prune_spatial_size, opt.weight_init, grad_mode, pretrain_name)
+      else:
+        file_path = 'data/ucf101/ucf101_{}_sz{}_{}_{}.npy'.format(
+          opt.network_name, opt.prune_spatial_size, opt.weight_init, grad_mode)
 
     model, _ = generate_model(opt)
   elif opt.dataset == 'brats':
@@ -132,7 +137,7 @@ if __name__ == "__main__":
   assert (model is not None) and (file_path is not None) \
          and os.path.exists(file_path), file_path
 
-  weight_init(model, mode=opt.weight_init)
+  weight_init(model, mode=opt.weight_init) if not os.path.exists(opt.pretrain_path) else None
   model = model.cuda()
 
   # Get resource list

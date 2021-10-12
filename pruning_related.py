@@ -211,15 +211,21 @@ def refine_model_I3D(model, neuron_mask_clean):
   refined_model = copy.deepcopy(model)
   n_layers = len(neuron_mask_clean) // 2
   valid_neuron_list = []
+  valid_neuron_loc_list = []
 
   for idx in range(n_layers):
     current_layer = neuron_mask_clean[2 * idx]
     kernel_size = current_layer.size(2)
-    out_c = (current_layer.view(current_layer.size(0), -1).sum(1) != 0).float().sum()
-    in_c = (current_layer.transpose(0, 1).contiguous().view(current_layer.size(1), -1).sum(1) != 0).float().sum()
+
+    out_c_loc = (current_layer.view(current_layer.size(0), -1).sum(1) != 0)
+    in_c_loc = (current_layer.transpose(0, 1).contiguous().view(current_layer.size(1), -1).sum(1) != 0)
+    out_c = out_c_loc.float().sum()
+    in_c = in_c_loc.float().sum()
     valid_neuron_list.append([int(out_c.cpu().numpy().item()),
                               int(in_c.cpu().numpy().item()),
                               int(kernel_size)])
+    valid_neuron_loc_list.append({'out_c_loc': out_c_loc,
+                                  'in_c_loc': in_c_loc})
 
   # Check
   layer_idx = 0
@@ -234,7 +240,8 @@ def refine_model_I3D(model, neuron_mask_clean):
       layer_idx += 1
 
   layer_idx = 0
-  for key, layer in refined_model.named_modules():
+  for (key, layer), (full_key, full_layer) in zip(refined_model.named_modules(),
+                                                  model.named_modules()):
     if isinstance(layer, (nn.Linear, nn.Conv2d, nn.Conv3d,
                           nn.ConvTranspose2d, nn.ConvTranspose3d)):
       weight_len = len(layer.weight.size())
@@ -254,23 +261,39 @@ def refine_model_I3D(model, neuron_mask_clean):
       layer.in_channels = in_c
       layer.out_channels = out_c
 
+      # ====
+      out_c_loc = valid_neuron_loc_list[layer_idx]['out_c_loc']
+      in_c_loc = valid_neuron_loc_list[layer_idx]['in_c_loc']
+      weight_v = full_layer.weight[out_c_loc].detach()
+      weight_v = weight_v.transpose(0, 1)[in_c_loc].transpose(0, 1)
+      layer.weight.data.copy_(weight_v)
+
       if layer.bias is not None:
-        layer.bias = nn.Parameter(layer.bias.new_zeros(out_c),
-                                  requires_grad=True)
+        layer.bias = nn.Parameter(layer.bias.new_zeros(out_c), requires_grad=True)
+
+        # ====
+        layer.bias.data.copy_(full_layer.bias[out_c_loc].detach())
 
       layer_idx += 1
 
     if isinstance(layer, (nn.BatchNorm1d, nn.BatchNorm2d, nn.BatchNorm3d)):
       out_c = valid_neuron_list[layer_idx - 1][0]
-      layer.weight = nn.Parameter(layer.weight.new_zeros(out_c),
-                                  requires_grad=True)
+      out_c_loc = valid_neuron_loc_list[layer_idx - 1]['out_c_loc']
+      layer.weight = nn.Parameter(layer.weight.new_zeros(out_c), requires_grad=True)
       layer.num_features = out_c
       layer.running_mean = layer.running_mean.new_zeros(out_c)
       layer.running_var = layer.running_mean.new_ones(out_c)
 
+      # ====
+      layer.weight.data.copy_(full_layer.weight[out_c_loc].detach())
+      layer.running_mean.data.copy_(full_layer.running_mean[out_c_loc].detach())
+      layer.running_var.data.copy_(full_layer.running_var[out_c_loc].detach())
+
       if layer.bias is not None:
-        layer.bias = nn.Parameter(layer.bias.new_zeros(out_c),
-                                  requires_grad=True)
+        layer.bias = nn.Parameter(layer.bias.new_zeros(out_c), requires_grad=True)
+
+        # ====
+        layer.bias.data.copy_(full_layer.bias[out_c_loc].detach())
 
   return refined_model
 

@@ -211,5 +211,18 @@ def set_config():
   args.enable_hidden_layer_prune = (args.hidden_layer_sparsity > 0)
   args.enable_param_prune = (args.param_sparsity > 0)
   assert (not args.enable_raw_grad) if args.enable_param_prune else True
+  args.result_path = args.checkpoint_dir
+
+  if args.neuron_sparsity > 0:
+    args.result_path = os.path.join(args.checkpoint_dir,
+                                    'bz{}_prune{}_spa{:.2f}_lambda{}' \
+                                    .format(args.batch,
+                                            args.resource_list_type,
+                                            args.neuron_sparsity,
+                                            args.resource_list_lambda))
+    os.makedirs(args.result_path) if not os.path.exists(args.result_path) else None
+
+  if not os.path.exists(args.pretrain_path):
+    args.pretrain_path = ''
 
   return args

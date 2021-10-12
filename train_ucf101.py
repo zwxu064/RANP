@@ -37,6 +37,7 @@ if __name__ == '__main__':
     print(opt)
     torch.manual_seed(opt.manual_seed)
     model, parameters = generate_model(opt)
+    weight_init(model, mode=opt.weight_init) if (not os.path.exists(opt.pretrain_path)) else None
     # print('Original model:', model)
 
     if not opt.no_cuda:
@@ -83,10 +84,10 @@ if __name__ == '__main__':
             training_data, batch_size=opt.batch, shuffle=True, num_workers=0,
             pin_memory=True)
         train_logger = Logger(
-            os.path.join(opt.checkpoint_dir, 'train.log'),
+            os.path.join(opt.result_path, 'train.log'),
             ['epoch', 'loss', 'prec1', 'prec5', 'lr'])
         train_batch_logger = Logger(
-            os.path.join(opt.checkpoint_dir, 'train_batch.log'),
+            os.path.join(opt.result_path, 'train_batch.log'),
             ['epoch', 'batch', 'iter', 'loss', 'prec1', 'prec5', 'lr'])
 
         if opt.nesterov:
@@ -113,11 +114,11 @@ if __name__ == '__main__':
             validation_data, batch_size=16, shuffle=False, num_workers=0,
             pin_memory=True)
         val_logger = Logger(
-            os.path.join(opt.checkpoint_dir, 'val.log'), ['epoch', 'loss', 'prec1', 'prec5'])
+            os.path.join(opt.result_path, 'val.log'), ['epoch', 'loss', 'prec1', 'prec5'])
     print('Trainset len: {}, validset len: {}'.format(len(train_loader.dataset), len(val_loader.dataset)))
 
     best_prec1 = 0
-    opt.writer = SummaryWriter(opt.checkpoint_dir)
+    opt.writer = SummaryWriter(opt.result_path)
 
     # Profile for full model Zhiwei
     grad_mode = 'raw' if opt.enable_raw_grad else 'abs'
@@ -137,9 +138,15 @@ if __name__ == '__main__':
         else:
             json_path, network_connection_dict = None, None
 
-        file_path = 'data/ucf101/ucf101_{}_sz{}_{}_{}.npy'.format(
-            opt.model, opt.prune_spatial_size,
-            opt.weight_init, grad_mode)
+        if os.path.exists(opt.pretrain_path):
+            pretrain_name = opt.pretrain_path.split('/')[-1].split('.')[0]
+            file_path = 'data/ucf101/ucf101_{}_sz{}_{}_{}_{}.npy'.format(
+                opt.model, opt.prune_spatial_size,
+                opt.weight_init, grad_mode, pretrain_name)
+        else:
+            file_path = 'data/ucf101/ucf101_{}_sz{}_{}_{}.npy'.format(
+                opt.model, opt.prune_spatial_size,
+                opt.weight_init, grad_mode)
 
         train_loader_pruning = torch.utils.data.DataLoader(
             training_data, batch_size=1, shuffle=False, num_workers=0,
@@ -160,15 +167,14 @@ if __name__ == '__main__':
                                                     opt.model,
                                                     network_connection_dict=network_connection_dict,
                                                     enable_raw_grad=opt.enable_raw_grad)
+
+        # ==== Assign model parameters to new model
+        # if not pretrained, do below; otherwise, keep parameters in the full model.
+        weight_init(new_model, mode=opt.weight_init) if (not os.path.exists(opt.pretrain_path)) else None
+
         del model
         model = new_model.cpu()
-
         # print('New model:', model)
-
-        if hasattr(model, 'module'):
-            weight_init(model.module, mode=opt.weight_init)
-        else:
-            weight_init(model, mode=opt.weight_init)
 
         n_params_refined, n_neurons_refined = do_statistics_model(model)
         print('Statistics, org, params: {}, neurons: {}; refined, params: {} ({:.4f}%), neurons: {} ({:.4f}%)' \

@@ -1,4 +1,4 @@
-import torch
+import torch, os
 from torch import nn
 
 from .models import c3d, squeezenet, mobilenet, shufflenet, mobilenetv2, shufflenetv2, resnext, resnet, I3D
@@ -115,19 +115,26 @@ def generate_model(opt):
                 sample_size=opt.sample_size,
                 sample_duration=opt.sample_duration)
     elif opt.model == 'i3d':
-        model = I3D.InceptionI3d(opt.n_class, in_channels=3)
+        from .models.I3D import get_fine_tuning_parameters
+
+        if os.path.exists(opt.pretrain_path):
+            model = I3D.InceptionI3d(400, in_channels=3)
+        else:
+            model = I3D.InceptionI3d(opt.n_class, in_channels=3)
 
     if not opt.no_cuda:
         # model = model.cuda()
         # model = nn.DataParallel(model, device_ids=None)  # Zhiwei
-        pytorch_total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
-        print("Total number of trainable parameters: ", pytorch_total_params)
 
         if opt.pretrain_path:
             print('loading pretrained model {}'.format(opt.pretrain_path))
             pretrain = torch.load(opt.pretrain_path, map_location=torch.device('cpu'))
-            assert opt.arch == pretrain['arch']
-            model.load_state_dict(pretrain['state_dict'])
+
+            if False:
+                assert opt.arch == pretrain['arch']
+                model.load_state_dict(pretrain['state_dict'])
+            else:
+                model.load_state_dict(pretrain)
 
             if opt.model in  ['mobilenet', 'mobilenetv2', 'shufflenet', 'shufflenetv2']:
                 model.module.classifier = nn.Sequential(
@@ -141,9 +148,17 @@ def generate_model(opt):
                                 nn.ReLU(inplace=True),
                                 nn.AvgPool3d((1,4,4), stride=1))
                 model.module.classifier = model.module.classifier.cuda()
+            elif opt.model == 'i3d':  # Zhiwei
+                if hasattr(model, 'module'):
+                    model.module.replace_logits(opt.n_class)
+                else:
+                    model.replace_logits(opt.n_class)
             else:
                 model.module.fc = nn.Linear(model.module.fc.in_features, opt.n_finetune_classes)
                 model.module.fc = model.module.fc.cuda()
+
+            pytorch_total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+            print("Total number of trainable parameters: ", pytorch_total_params)
 
             parameters = get_fine_tuning_parameters(model, opt.ft_portion)
             return model, parameters

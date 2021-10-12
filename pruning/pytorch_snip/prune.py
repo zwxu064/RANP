@@ -164,20 +164,21 @@ def add_mask_for_grad(net, args, enable_kernel_mask=True, enable_hidden_mask=Fal
       if enable_hidden_mask:
         layer.hidden_mask_hook = layer.register_forward_hook(add_mask_for_hidden_hook)
 
-      if args.weight_init == 'xn':
-        nn.init.xavier_normal_(layer.weight)
-      elif args.weight_init == 'xu':
-        nn.init.xavier_uniform_(layer.weight)
-      elif args.weight_init == 'kn':
-        nn.init.kaiming_normal_(layer.weight)
-      elif args.weight_init == 'ku':
-        nn.init.kaiming_uniform_(layer.weight)
-      elif args.weight_init in ['orthogonal', 'ort']:
-        nn.init.orthogonal_(layer.weight)
-      elif args.weight_init in ['one', 'fixed']:
-        nn.init.constant_(layer.weight, 1)
-      else:
-        assert False
+      if False:  # this avoids pretrained model loading
+        if args.weight_init == 'xn':
+          nn.init.xavier_normal_(layer.weight)
+        elif args.weight_init == 'xu':
+          nn.init.xavier_uniform_(layer.weight)
+        elif args.weight_init == 'kn':
+          nn.init.kaiming_normal_(layer.weight)
+        elif args.weight_init == 'ku':
+          nn.init.kaiming_uniform_(layer.weight)
+        elif args.weight_init in ['orthogonal', 'ort']:
+          nn.init.orthogonal_(layer.weight)
+        elif args.weight_init in ['one', 'fixed']:
+          nn.init.constant_(layer.weight, 1)
+        else:
+          assert False
 
       layer.weight.requires_grad = False  # Cuz it is fixed by initialization
 
@@ -189,13 +190,14 @@ def add_mask_for_grad(net, args, enable_kernel_mask=True, enable_hidden_mask=Fal
 
     # Bug this is important for reproducing
     if isinstance(layer, (nn.BatchNorm1d, nn.BatchNorm2d, nn.BatchNorm3d)):
-      if layer.weight is not None:
-        # not good, this will make channel prune remove whole layers
-        # nn.init.constant_(layer.weight, 1)
-        nn.init.uniform_(layer.weight)
+      if False:  # this avoids pretrained model loading
+        if layer.weight is not None:
+          # not good, this will make channel prune remove whole layers
+          # nn.init.constant_(layer.weight, 1)
+          nn.init.uniform_(layer.weight)
 
-      if layer.bias is not None:
-        nn.init.constant_(layer.bias, 0)
+        if layer.bias is not None:
+          nn.init.constant_(layer.bias, 0)
 
     # Override the forward methods:
     if isinstance(layer, nn.Linear):
@@ -799,6 +801,7 @@ def neuron_prune_3dunet(grads, neuron_sparsity, acc_mode,
     if True:
       if resource_list_type.find('grad') > -1:
         neuron_grad_list_mean = torch.stack([neuron_grad.mean() for neuron_grad in neuron_grad_list], dim=0)
+
         neuron_grad_list_mean_max = neuron_grad_list_mean.max()
         neuron_grad_list_factor = neuron_grad_list_mean_max / neuron_grad_list_mean
         neuron_grad_list = [neuron_grad * neuron_grad_list_factor[idx] for idx, neuron_grad in enumerate(neuron_grad_list)]
