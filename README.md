@@ -3,11 +3,11 @@
   and awarded "Best Student Paper".
   If you find our paper or code useful, please cite it below.
   ```
-  @article{xu2020ranp,
-  title={RANP: Resource Aware Neuron Pruning at Initialization for 3D CNNs},
-  author={Zhiwei Xu, Thalaiyasingam Ajanthan, Vibhav Vineet, and Richard Hartley},
-  journal={Internatinoal Conference on 3D Vision},
-  year={2020}
+  @inproceedings{xu:3dv2020ranp,
+      title={RANP: Resource Aware Neuron Pruning at Initialization for 3D CNNs},
+      author={Zhiwei Xu, Thalaiyasingam Ajanthan, and Richard Hartley},
+      booktitle={International Conference on 3D Vision},
+      year={2020}
   }
   ```
 
